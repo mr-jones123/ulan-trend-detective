@@ -14,7 +14,7 @@ interface Props {
 const { artifact: a, claims } = Astro.props;
 const n = a.national;
 const grid = decodeCells(a);
-const nationalChart = chartHtml(placeChart(a, placeOf(a, grid, COUNTRY), null));
+const nationalChart = chartHtml(placeChart(a, placeOf(a, grid, COUNTRY), null, 'mean'));
 const legend = legendModel(a, 'mean', a.period.start);
 const cellCount = fmt.count(a.cells.count);
 const regionCount = a.regions.length;
@@ -39,7 +39,7 @@ const CLAIMS_BY_CHAPTER: Record<ChapterId, readonly Claim[]> = {
   driest: [claims.driest],
   wettest: [claims.wettest],
   swing: [claims.swing],
-  enso: [claims.enso],
+  enso: [claims.enso, claims['season-window']],
   'enso-region': [claims['enso-region']],
   pantabangan: [],
   trend: [claims.trend],
@@ -49,7 +49,7 @@ const CLAIMS_BY_CHAPTER: Record<ChapterId, readonly Claim[]> = {
   'next-year': [claims['next-year']],
 };
 const MODE_LABELS: Record<Mode, string> = {
-  mean: 'Average rain', year: 'One year', enso: 'El Niño years', trend: '25-year change',
+  mean: 'Average rain', year: 'One year', enso: 'El Niño, January to April', trend: '25-year change',
 };
 const chapters = CHAPTER_IDS.map((id, index) => {
   const next = CHAPTER_IDS[index + 1];
@@ -79,7 +79,7 @@ const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elni
         <div class="step-body">
           <h3 id={`h-${chapter.id}`} class="step-heading" data-reveal>{chapter.heading}</h3>
           {chapter.id === 'pantabangan' && (
-            <p data-reveal>In April 2024, during a drought, low water in Pantabangan Lake in Nueva Ecija exposed more of the ruins of the old town of Pantabangan, which went under when the reservoir was built. Drag the line to compare 29 April 2023 with 15 April 2024.</p>
+            <p data-claim={claims['pantabangan-context'].id} data-verdict={claims['pantabangan-context'].verdict} data-reveal>{claims['pantabangan-context'].text}</p>
           )}
           {chapter.claims.map((claim) => <p data-claim={claim.id} data-verdict={claim.verdict} data-reveal>{claim.text}</p>)}
 
@@ -108,11 +108,11 @@ const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elni
           {chapter.id === 'enso' && (
             <>
               <div class="numerals" data-reveal>
-                <p><span class="numeral">{fmt.count(Math.round(n.enso.mean_mm))}</span><span class="numeral-caption">mm, average of the {n.enso.group_size} years that began in El Niño</span></p>
-                <p><span class="numeral">{fmt.count(Math.round(n.enso.other_mean_mm))}</span><span class="numeral-caption">mm, average of the other {n.enso.other_size} years</span></p>
+                <p><span class="numeral">{fmt.count(Math.round(n.jan_apr.enso.mean_mm))}</span><span class="numeral-caption">mm, January to April average of the {n.jan_apr.enso.group_size} years that began in El Niño</span></p>
+                <p><span class="numeral">{fmt.count(Math.round(n.jan_apr.enso.other_mean_mm))}</span><span class="numeral-caption">mm, January to April average of the other {n.jan_apr.enso.other_size} years</span></p>
               </div>
               <p data-claim={claims['enso-land'].id} data-verdict={claims['enso-land'].verdict} data-reveal>{claims['enso-land'].text}</p>
-              <p class="note" data-reveal>These are averages of what happened. They do not show what caused the difference, and they are not a forecast.</p>
+              <p class="note" data-claim={claims['comparison-limit'].id} data-verdict={claims['comparison-limit'].verdict} data-reveal>{claims['comparison-limit'].text}</p>
             </>
           )}
 
@@ -132,7 +132,7 @@ const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elni
               </figure>
               <p data-claim={claims['pantabangan-enso'].id} data-verdict={claims['pantabangan-enso'].verdict} data-reveal>{claims['pantabangan-enso'].text}</p>
               <p data-claim={claims['pantabangan-2024'].id} data-verdict={claims['pantabangan-2024'].verdict} data-reveal>{claims['pantabangan-2024'].text}</p>
-              <p class="note" data-reveal>An annual rainfall total does not measure reservoir storage or a dry-season deficit. For drought advisories, follow <a href={PAGASA}>PAGASA</a>.</p>
+              <p class="note" data-claim={claims['pantabangan-limit'].id} data-verdict={claims['pantabangan-limit'].verdict} data-reveal>{claims['pantabangan-limit'].text} For drought advisories, follow <a href={PAGASA}>PAGASA</a>.</p>
             </>
           )}
 
@@ -149,9 +149,9 @@ const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elni
           {chapter.id === 'regions' && (
             <div class="table-wrap" data-reveal>
               <table class="region-table">
-                <caption>Annual rainfall by region, 2001-2025. Change is the fitted Sen slope. The test is Mann-Kendall, p &lt; 0.05, unadjusted.</caption>
+                <caption>Annual rainfall and January to April El Niño comparison by region, 2001-2025. Change is the annual fitted Sen slope. The test is Mann-Kendall, p &lt; 0.05, unadjusted.</caption>
                 <thead>
-                  <tr><th scope="col">Region</th><th scope="col" class="col-mean">Average</th><th scope="col">Change per decade</th><th scope="col">Test</th><th scope="col">El Niño-start years against other years</th></tr>
+                  <tr><th scope="col">Region</th><th scope="col" class="col-mean">Average year</th><th scope="col">Annual change per decade</th><th scope="col">Test</th><th scope="col">January to April, El Niño-start years against other years</th></tr>
                 </thead>
                 <tbody>
                   {regionsByChange.map((region) => (
@@ -160,7 +160,7 @@ const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elni
                       <td class="col-mean">{fmt.mm(region.mean_mm)}</td>
                       <td>{fmt.signedPct(region.sen_pct_decade)}</td>
                       <td>{region.meets_threshold ? TEST_WORDS.meets : TEST_WORDS.chance}</td>
-                      <td>{fmt.signedPct(region.enso.diff_pct)}</td>
+                      <td>{fmt.signedPct(region.jan_apr.enso.diff_pct)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -211,9 +211,9 @@ const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elni
       <section class="place" data-place tabindex="0" aria-labelledby="place-heading">
         <h3 id="place-heading" data-place-heading>Philippines</h3>
         <dl class="place-facts">
-          <div><dt>Average year</dt><dd data-fact="mean">{fmt.mm(n.mean_mm)}</dd></div>
-          <div><dt>25-year change</dt><dd data-fact="trend">{fmt.signedPct(n.sen_pct_decade)} per decade ({fmt.mm(n.sen_mm_decade)}), {n.meets_threshold ? TEST_WORDS.meets : TEST_WORDS.chance}, {fmt.pSameSideOfAlpha(n.p, n.meets_threshold, a.alpha)}</dd></div>
-          <div><dt>El Niño-start years</dt><dd data-fact="enso">{fmt.signedPct(n.enso.diff_pct)} against other years</dd></div>
+          <div><dt data-mean-label>Average year</dt><dd data-fact="mean">{fmt.mm(n.mean_mm)}</dd></div>
+          <div><dt>25-year change in annual rain</dt><dd data-fact="trend">{fmt.signedPct(n.sen_pct_decade)} per decade ({fmt.mm(n.sen_mm_decade)}), {n.meets_threshold ? TEST_WORDS.meets : TEST_WORDS.chance}, {fmt.pSameSideOfAlpha(n.p, n.meets_threshold, a.alpha)}</dd></div>
+          <div><dt>El Niño-start years, January to April</dt><dd data-fact="enso">{fmt.signedPct(n.jan_apr.enso.diff_pct)} against other years</dd></div>
           <div data-fact-row="land" hidden><dt>Land in this square</dt><dd data-fact="land"></dd></div>
         </dl>
         <p class="place-help">With this box focused, arrow keys move one square at a time.</p>

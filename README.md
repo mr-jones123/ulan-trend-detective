@@ -1,6 +1,6 @@
 # Ulan, measured
 
-A static data story about 25 years of NASA satellite rainfall over the Philippines, 2001 to 2025. It maps 3,735 native IMERG squares, fits one trend method to every square, region and the country, and compares years that began in El Niño with the other years. A reader can then find their own square and read its 25 annual totals.
+A static data story about 25 years of NASA satellite rainfall over the Philippines, 2001 to 2025. It maps 3,735 native IMERG squares, fits one annual trend method to every square, region and the country, and compares January to April rainfall in years that began in El Niño with the other years. A reader can find their own square and read all 25 annual or January to April totals.
 
 The site is one Astro page and one Python data builder. It has no backend and makes no NASA request from the browser. Every number in the prose is rendered into static HTML at build time from the same JSON file the map loads.
 
@@ -74,17 +74,19 @@ Imbue and Albert Sans are under the SIL Open Font License 1.1. The page loads on
 
 ## Method
 
-**Annual totals.** `scripts/imerg.py` sums each pixel's daily values into calendar months, and the builder sums twelve months into each year. A daily value in mm/day counts as that many millimetres for one UTC day. Leap days are included. Missing days, fill values, negative values and off-grid centres fail acquisition.
+**Annual and January to April totals.** `scripts/imerg.py` sums each pixel's daily values into calendar months. The builder sums twelve months into each annual total and months 1 through 4 of the same calendar year into each January to April total. A daily value in mm/day counts as that many millimetres for one UTC day. Leap days are included. Missing days, fill values, negative values and off-grid centres fail acquisition. January to April covers much of the country's dry cropping season, but eastern Type II areas, including Eastern Visayas and Caraga, are wet then.
 
 **Squares.** A pixel's id is `row-col` on IMERG's global 0.1° grid. Its centre is latitude −89.95 + 0.1 × row and longitude −179.95 + 0.1 × col. The map draws each pixel as its full 0.1° square, not clipped to the coast. The set of squares is every square with a positive-area intersection with the pinned ADM0 boundary. The builder checks that this set equals the cube's 3,735 pixels.
 
-**Weights.** A square's national weight is the area of its intersection with ADM0, in square degrees, times the cosine of its centre latitude. A square's weight in a region is the area of its intersection with that region and ADM0, times the same cosine. A square on a border counts toward every region it touches. The national and regional series are the weighted means of the squares' annual totals. The artifact ships every region's member list and weights, so anyone can rebuild the series.
+**Weights.** A square's national weight is the area of its intersection with ADM0, in square degrees, times the cosine of its centre latitude. A square's weight in a region is the area of its intersection with that region and ADM0, times the same cosine. A square on a border counts toward every region it touches. National and regional annual and January to April series use these same weights. The artifact ships every region's member list and weights, so anyone can rebuild the series.
 
-**Trend.** For each series, the Sen slope is the median of the 300 pairwise slopes between years. The page reports it in mm per decade and as a percentage of the 2001-2025 mean per decade. The Mann-Kendall test uses tie-corrected variance, the continuity correction and a two-sided normal p-value, with n = 25 and no autocorrelation correction. A change "meets the test" when p < 0.05. The builder decides direction, the test result, area shares and rankings on unrounded values and writes those decisions into the artifact. The browser never re-tests a rounded p. When a printed p would round onto the wrong side of 0.05, the page prints more digits.
+**Annual trend.** For each annual series, the Sen slope is the median of the 300 pairwise slopes between years. The page reports it in mm per decade and as a percentage of the 2001-2025 mean per decade. The Mann-Kendall test uses tie-corrected variance, the continuity correction and a two-sided normal p-value, with n = 25 and no autocorrelation correction. A change "meets the test" when p < 0.05. The builder decides direction, the test result, area shares and rankings on unrounded values and writes those decisions into the artifact. The browser never re-tests a rounded p. When a printed p would round onto the wrong side of 0.05, the page prints more digits. No trend is fitted to the January to April series.
 
-**El Niño-start years.** A year began in El Niño when NOAA's December-to-February ONI for that year is +0.5 °C or more. The comparison reports the two group means, the difference as a percentage of the other years' mean, and how many El Niño-start years fell below the 2001-2025 mean. It is descriptive and has no test.
+**El Niño-start years.** A year began in El Niño when NOAA's December-to-February ONI for that year is +0.5 °C or more. The comparison reports the two group means, the difference as a percentage of the other years' mean, and how many El Niño-start years fell below the 2001-2025 mean for the same window. The map, regional rankings and land shares use January to April. National and regional annual comparisons remain as context. The comparison is descriptive and has no test.
 
 **Story copy.** `src/lib/story.ts` picks every scientific sentence from a table of wordings keyed by the computed result. `assertClaims` fails the build when a claim is missing, when a sentence uses a direction word that contradicts its result, or when a heading is longer than 44 characters. Each claim renders with `data-claim` and `data-verdict`.
+
+**Artifact schema.** `ph-rain-imerg-v2` adds `jan_apr` to each national and regional series with `mm`, `mean_mm`, `anomaly_pct` and `enso`. Cell columns contain flattened `jan_apr_mm`, `jan_apr_mean_mm`, `jan_apr_enso_diff_pct` and `jan_apr_enso_sign`. The former annual per-cell El Niño columns are removed. The El Niño explorer shows January to April bars and totals without an annual trend line. Average, one-year and trend map modes stay annual.
 
 ## Results at build time
 
@@ -92,8 +94,9 @@ These are the values in the current artifact. They come from the builder's outpu
 
 - National average year: 2,617 mm. Sen slope +180 mm per decade, +6.9% of the mean per decade, p = 0.168. It does not meet the test.
 - 91.0% of land lies in squares with a rising slope. 13.5% lies in the 533 squares whose rise meets the test. No square's fall meets it.
-- Nine years began in El Niño: 2003, 2005, 2007, 2010, 2015, 2016, 2019, 2020 and 2024. They averaged 2,322 mm against 2,783 mm for the other 16 years, 16.6% less. All nine were below the 2001-2025 mean.
-- All 17 regions had less rain in El Niño-start years. The widest gap is Eastern Visayas, −33.6%.
+- Nine years began in El Niño: 2003, 2005, 2007, 2010, 2015, 2016, 2019, 2020 and 2024. Their January to April totals averaged 269 mm against 668 mm for the other 16 years, 59.8% less. All nine were below the 2001-2025 January to April mean of 524 mm. Across the whole year the gap was 16.6%, with 2,322 mm against 2,783 mm.
+- All 17 regions and 100.0% of land had less January to April rain in El Niño-start years. The widest regional gap is Eastern Visayas, −73.1%.
+- The Pantabangan square received 121 mm from January to April 2024 against its 212 mm average, a 42.9% deficit. Its January to April El Niño comparison is −56.8%. Its annual 2024 total was 1.6% above average.
 - Mimaropa has the largest fitted change of the 17 regions, +10.8% per decade, p = 0.047. Calabarzon and Mimaropa are the two regions that meet the test.
 
 ## Why the map moved from MERRA-2 to IMERG
@@ -104,7 +107,7 @@ The builder recomputes this audit from the two preserved point responses in `dat
 
 ## Limits
 
-Annual totals cannot show extremes, dry-season timing or typhoon intensity. Coastal squares include sea. The trend test assumes independent years, and testing 3,735 neighbouring squares means about 5% of land could meet the test by chance even with no trend, as a rough guide only. The El Niño comparison does not separate El Niño from other causes. Nothing on the page is a forecast. The boundary files mark the area the data covers and do not state a position on territorial claims. The ADM1 file still names the Bangsamoro region ARMM.
+Annual and January to April totals cannot show daily extremes, rainfall timing within either window or typhoon intensity. Rainfall over the Pantabangan square is not reservoir storage and does not measure catchment inflows, releases or evaporation. The January to April 2024 total includes days after the 15 April photograph. Coastal squares include sea. The trend test assumes independent years, and testing 3,735 neighbouring squares means about 5% of land could meet the test by chance even with no trend, as a rough guide only. The El Niño comparison does not separate El Niño from other causes. Nothing on the page is a forecast. The boundary files mark the area the data covers and do not state a position on territorial claims. The ADM1 file still names the Bangsamoro region ARMM.
 
 ## Map behaviour
 
@@ -117,7 +120,7 @@ Annual totals cannot show extremes, dry-season timing or typhoon intensity. Coas
 
 ## Sizes
 
-- `public/data/philippines-rainfall.json` is 787,608 bytes, 271,951 bytes gzipped.
+- `public/data/philippines-rainfall.json` is 1,184,771 bytes, 434,896 bytes gzipped.
 - `data/sources/imerg-monthly.json.gz` is 3,008,202 bytes.
 - The five pictures total 1,715,781 bytes.
 
@@ -132,4 +135,4 @@ Annual totals cannot show extremes, dry-season timing or typhoon intensity. Coas
 - `src/lib/basemap.ts`, `src/lib/colour.ts`, `src/lib/chart.ts` and `src/lib/place.ts` own the label transform, the colour scales, the place chart and place summaries.
 - `src/scripts/main.ts` wires loading, scrolling, controls and geolocation. `src/scripts/map.ts` owns the MapLibre instance. `src/scripts/panel.ts` renders the legend and explorer. `src/scripts/compare.ts` and `src/scripts/reveal.ts` own the image slider and section entrances.
 - `src/components/Story.astro` and `src/pages/index.astro` own the markup and fixed copy. `src/styles/global.css` owns the layout.
-- `tests/test_build_rainfall.py` covers Sen and Mann-Kendall against the independent point series, ties, flat series, leap days, missing days, fill values, weighted means, the El Niño threshold, edge containment, legend breaks and tied regions.
+- `tests/test_build_rainfall.py` covers Sen and Mann-Kendall against the independent point series, ties, flat series, leap days, missing days, fill values, weighted means, same-calendar-year January to April aggregation, seasonal versus annual El Niño comparisons, the El Niño threshold, edge containment, legend breaks and tied regions.

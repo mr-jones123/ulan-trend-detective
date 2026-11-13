@@ -37,6 +37,7 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
   const placeHeading = one<HTMLElement>(root, '[data-place-heading]');
   const facts = {
     mean: one<HTMLElement>(root, '[data-fact="mean"]'),
+    meanLabel: one<HTMLElement>(root, '[data-mean-label]'),
     trend: one<HTMLElement>(root, '[data-fact="trend"]'),
     enso: one<HTMLElement>(root, '[data-fact="enso"]'),
     land: one<HTMLElement>(root, '[data-fact="land"]'),
@@ -90,24 +91,27 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
   function renderPlace(state: ViewState) {
     const place = placeFor(state);
     const selectedYear = state.mode === 'year' ? state.year : null;
-    const key = `${place.key}:${selectedYear ?? ''}`;
+    const seasonal = state.mode === 'enso';
+    const totals = seasonal ? place.janApr : place.annual;
+    const key = `${place.key}:${state.mode}:${selectedYear ?? ''}`;
     if (key === shown.place) return;
     placeHeading.textContent = place.heading;
     const signedMm = `${place.senPerDecade > 0 ? '+' : place.senPerDecade < 0 ? '\u2212' : ''}${fmt.mm(Math.abs(place.senPerDecade))}`;
-    facts.mean.textContent = fmt.mm(place.mean);
+    facts.meanLabel.textContent = seasonal ? 'Average January to April' : 'Average year';
+    facts.mean.textContent = fmt.mm(seasonal ? place.janAprMean : place.mean);
     facts.trend.textContent = `${fmt.signedPct(place.pctDecade)} per decade (${signedMm}), ${place.meets ? TEST_WORDS.meets : TEST_WORDS.chance}, ${fmt.pSameSideOfAlpha(place.p, place.meets, a.alpha)}`;
-    facts.enso.textContent = `${fmt.signedPct(place.ensoDiffPct)} against other years`;
+    facts.enso.textContent = `${fmt.signedPct(place.ensoDiffPct)} against other years, January to April`;
     facts.landRow.hidden = place.landPct === null;
     facts.land.textContent = place.landPct === null ? '' : `${place.landPct}%`;
-    exploreChart.innerHTML = chartHtml(placeChart(a, place, selectedYear));
-    caption.textContent = `${place.heading}, annual rainfall in mm`;
+    exploreChart.innerHTML = chartHtml(placeChart(a, place, selectedYear, state.mode));
+    caption.textContent = `${place.heading}, ${seasonal ? 'January to April' : 'annual'} rainfall in mm`;
     table.replaceChildren(...a.period.years.map((year, index) => {
       const row = document.createElement('tr');
       const th = document.createElement('th');
       th.scope = 'row';
       th.textContent = String(year);
       const mm = document.createElement('td');
-      mm.textContent = fmt.mm(place.annual[index] ?? 0);
+      mm.textContent = fmt.mm(totals[index] ?? 0);
       const enso = document.createElement('td');
       enso.textContent = a.enso.began_el_nino[index] ? 'began in El Niño' : '';
       row.append(th, mm, enso);
@@ -120,7 +124,7 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
   function renderStoryChart(state: ViewState) {
     const year = state.mode === 'year' ? state.year : null;
     if (year === shown.storyYear) return;
-    storyChart.innerHTML = chartHtml(placeChart(a, nationalPlace, year));
+    storyChart.innerHTML = chartHtml(placeChart(a, nationalPlace, year, 'year'));
     shown = { ...shown, storyYear: year };
   }
 
@@ -167,7 +171,10 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
         const link = document.createElement('a');
         link.href = '#explore';
         link.textContent = 'Open in the explorer';
-        readout.append(strong, ` ${fmt.mm(place.mean)} in an average year, ${fmt.signedPct(place.pctDecade)} per decade. `, link);
+        const summary = state.mode === 'enso'
+          ? `${fmt.mm(place.janAprMean)} in an average January to April, ${fmt.signedPct(place.ensoDiffPct)} in El Niño-start years against other years.`
+          : `${fmt.mm(place.mean)} in an average year, ${fmt.signedPct(place.pctDecade)} per decade.`;
+        readout.append(strong, ` ${summary} `, link);
       }
     },
     status(text) {

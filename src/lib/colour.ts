@@ -38,7 +38,7 @@ function paletteFor(mode: Mode, classes: number): readonly string[] {
 const TITLES: Record<Mode, (year: number) => string> = {
   mean: () => 'Average year, 2001-2025, mm',
   year: (year) => `${year} against each square's 2001-2025 average, %`,
-  enso: () => 'El Niño-start years against other years, %',
+  enso: () => 'January to April, El Niño-start years against other years, %',
   trend: () => 'Change per decade, % of the average year',
 };
 

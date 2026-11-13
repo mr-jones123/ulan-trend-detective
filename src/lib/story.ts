@@ -69,7 +69,8 @@ const TREND_HEADING: Record<TrendVerdict, string> = {
 export const CLAIM_IDS = [
   'standfirst-enso', 'standfirst-trend', 'rain', 'driest', 'wettest', 'swing', 'enso', 'enso-land',
   'enso-region', 'pantabangan-enso', 'pantabangan-2024', 'trend', 'trend-where', 'trend-where-other',
-  'trend-region', 'next-year', 'audit',
+  'trend-region', 'next-year', 'audit', 'season-window', 'pantabangan-context', 'pantabangan-limit',
+  'comparison-limit', 'method-totals', 'method-weights', 'method-enso', 'method-limits',
 ] as const;
 export type ClaimId = (typeof CLAIM_IDS)[number];
 
@@ -126,7 +127,17 @@ export function buildClaims(a: Artifact): Claims {
   const n = a.national;
   const f = a.facts;
   const { alpha } = a;
-  const enso = n.enso;
+  const enso = n.jan_apr.enso;
+  const annualGap = {
+    down: `${fmt.pct(n.enso.diff_pct)} less across the whole year`,
+    up: `${fmt.pct(n.enso.diff_pct)} more across the whole year`,
+    zero: 'no difference across the whole year',
+  }[n.enso.direction];
+  const seasonalGap = {
+    down: `${fmt.pct(enso.diff_pct)} less rain`,
+    up: `${fmt.pct(enso.diff_pct)} more rain`,
+    zero: 'the same rain',
+  }[enso.direction];
   const regionCount = a.regions.length;
   const total = f.shares.total_count;
   const counts = f.shares.count;
@@ -135,18 +146,18 @@ export function buildClaims(a: Artifact): Claims {
   const each = (ids: readonly RegionId[]) => (ids.length > 1 ? ' each' : '');
 
   const trend = trendSentence('Nationally', n, alpha);
-  const standfirstEnso = ensoBelow(enso, 'years that began in El Niño', 'the 2001-2025 average');
-  const nextYear = ensoBelow(enso, 'years in this record that began in El Niño', 'the 2001-2025 national average');
+  const standfirstEnso = ensoBelow(enso, 'years that began in El Niño', 'the 2001-2025 January to April average');
+  const nextYear = ensoBelow(enso, 'years in this record that began in El Niño', 'the 2001-2025 national January to April average');
 
   const ensoIntro = `${enso.group_size} of the 25 years began in El Niño by this page's rule, a December-to-February ONI of +0.5 °C or more: ${fmt.list(a.enso.years.map(String))}.`;
-  const ensoMeans = `Nationally they averaged ${fmt.mm(enso.mean_mm)}`;
-  const ensoBelowText = ensoBelow(enso, '', 'the 2001-2025 average').text;
+  const ensoMeans = `From January to April, they averaged ${fmt.mm(enso.mean_mm)} nationally`;
+  const ensoBelowText = ensoBelow(enso, '', 'the 2001-2025 January to April average').text;
   const ensoClaim: Record<Direction, Claim> = {
-    down: { id: 'enso', verdict: 'down', direction: 'down', heading: 'El Niño-start years had less rain',
+    down: { id: 'enso', verdict: 'down', direction: 'down', heading: 'El Niño, less rain from January to April',
       text: `${ensoIntro} ${ensoMeans}, ${fmt.pct(enso.diff_pct)} less than the other ${enso.other_size} years' ${fmt.mm(enso.other_mean_mm)}. ${ensoBelowText}` },
-    up: { id: 'enso', verdict: 'up', direction: 'mixed', heading: 'El Niño-start years had more rain',
+    up: { id: 'enso', verdict: 'up', direction: 'mixed', heading: 'El Niño, more rain from January to April',
       text: `${ensoIntro} ${ensoMeans}, ${fmt.pct(enso.diff_pct)} more than the other ${enso.other_size} years' ${fmt.mm(enso.other_mean_mm)}. ${ensoBelowText}` },
-    zero: { id: 'enso', verdict: 'zero', direction: 'mixed', heading: 'El Niño-start years matched the rest',
+    zero: { id: 'enso', verdict: 'zero', direction: 'mixed', heading: 'January to April matched the other years',
       text: `${ensoIntro} ${ensoMeans}, the same as the other ${enso.other_size} years. ${ensoBelowText}` },
   };
 
@@ -158,15 +169,15 @@ export function buildClaims(a: Artifact): Claims {
   const ensoRegionClaim: Record<Direction, Claim> = {
     down: { id: 'enso-region', verdict: 'down', direction: 'down',
       heading: ensoIds.length > 1 ? `${ensoIds.length} regions share the widest gap` : `${ensoLead.name} had the widest gap`,
-      text: `In ${ensoNames}, El Niño-start years averaged ${fmt.pct(ensoLead.enso.diff_pct)} less rain than other years, the widest gap among the ${regionCount} regions. ${lessCount} had less rain in those years.` },
+      text: `From January to April in ${ensoNames}, El Niño-start years averaged ${fmt.pct(ensoLead.jan_apr.enso.diff_pct)} less rain than other years, the widest gap among the ${regionCount} regions. ${lessCount} had less rain in that window.` },
     up: { id: 'enso-region', verdict: 'up', direction: 'up', heading: 'Every region had more rain in El Niño years',
-      text: `Even in ${ensoNames}, where El Niño-start years compare lowest against other years, those years averaged ${fmt.pct(ensoLead.enso.diff_pct)} more rain.` },
+      text: `From January to April in ${ensoNames}, where El Niño-start years compare lowest against other years, those years averaged ${fmt.pct(ensoLead.jan_apr.enso.diff_pct)} more rain.` },
     zero: { id: 'enso-region', verdict: 'zero', direction: 'none', heading: 'No region stood apart in El Niño years',
-      text: `Even in ${ensoNames}, where El Niño-start years compare lowest against other years, the two averages are equal.` },
+      text: `From January to April in ${ensoNames}, where El Niño-start years compare lowest against other years, the two averages are equal.` },
   };
 
   const pan = f.pantabangan;
-  const pan2024 = `In 2024 the same square received ${fmt.mm(pan.mm_2024)}`;
+  const pan2024 = `From January to April 2024, the same square received ${fmt.mm(pan.jan_apr_mm_2024)}`;
 
   const baseline = `If nothing were changing and squares were independent, about ${Math.round(alpha * 100)}% of land would meet the test by chance. Neighbouring squares move together, so that share is only a rough guide.`;
   const ranked = (list: Artifact['facts']['meeting_regions']['up']) =>
@@ -206,7 +217,9 @@ export function buildClaims(a: Artifact): Claims {
   const driestIds = f.focus.driest_mean_region;
 
   const claims: Claims = {
-    'standfirst-enso': { id: 'standfirst-enso', verdict: standfirstEnso.direction, direction: standfirstEnso.direction, text: standfirstEnso.text },
+    'standfirst-enso': { id: 'standfirst-enso', verdict: enso.direction,
+      direction: enso.direction === n.enso.direction && enso.direction === standfirstEnso.direction ? standfirstEnso.direction : 'mixed',
+      text: `El Niño-start years averaged ${seasonalGap} from January to April, against ${annualGap}. ${standfirstEnso.text}` },
     'standfirst-trend': { id: 'standfirst-trend', verdict: trend.verdict, direction: TREND_DIRECTION[trend.verdict],
       text: trend.verdict === 'zero' ? 'The fitted 25-year slope is zero.'
         : `The 25-year ${TREND_DIRECTION[trend.verdict] === 'up' ? 'rise' : 'fall'}, ${perDecade(n.sen_pct_decade)}, ${n.meets_threshold ? 'meets the unadjusted p < 0.05 test' : 'could still be chance'}.` },
@@ -223,17 +236,17 @@ export function buildClaims(a: Artifact): Claims {
         text: `Along the fitted trend line, the national total changed by ${fmt.mm(swing.trend_change_mm)} from 2001 to 2025, more than the ${fmt.mm(swing.range_mm)} between the driest and wettest years. Press Play to watch the years.` },
     enso: ensoClaim[enso.direction],
     'enso-land': { id: 'enso-land', verdict: f.enso_less_area_share >= 0.5 ? 'majority' : 'minority', direction: 'down',
-      text: `${f.enso_less_area_share >= 0.5 ? '' : 'Only '}${fmt.share(f.enso_less_area_share)} of land had less rain in El Niño-start years than in other years.` },
-    'enso-region': ensoRegionClaim[ensoLead.enso.direction],
-    'pantabangan-enso': gapClaim('pantabangan-enso', pan.enso_direction, {
-      down: `In the square over the lake, El Niño-start years averaged ${fmt.pct(pan.enso_diff_pct)} less rain than other years.`,
-      up: `In the square over the lake, El Niño-start years averaged ${fmt.pct(pan.enso_diff_pct)} more rain than other years.`,
-      zero: 'In the square over the lake, El Niño-start years averaged the same rain as other years.',
+      text: `${f.enso_less_area_share >= 0.5 ? '' : 'Only '}${fmt.share(f.enso_less_area_share)} of land had less rain from January to April in El Niño-start years than in other years.` },
+    'enso-region': ensoRegionClaim[ensoLead.jan_apr.enso.direction],
+    'pantabangan-enso': gapClaim('pantabangan-enso', pan.jan_apr_enso_direction, {
+      down: `In the square over the lake, El Niño-start years averaged ${fmt.pct(pan.jan_apr_enso_diff_pct)} less rain from January to April than other years.`,
+      up: `In the square over the lake, El Niño-start years averaged ${fmt.pct(pan.jan_apr_enso_diff_pct)} more rain from January to April than other years.`,
+      zero: 'In the square over the lake, El Niño-start years averaged the same rain from January to April as other years.',
     }),
-    'pantabangan-2024': gapClaim('pantabangan-2024', pan.direction_2024, {
-      down: `${pan2024}, ${fmt.pct(pan.anomaly_2024_pct)} below its 2001-2025 average of ${fmt.mm(pan.mean_mm)}.`,
-      up: `${pan2024}, ${fmt.pct(pan.anomaly_2024_pct)} above its 2001-2025 average of ${fmt.mm(pan.mean_mm)}.`,
-      zero: `${pan2024}, equal to its 2001-2025 average.`,
+    'pantabangan-2024': gapClaim('pantabangan-2024', pan.jan_apr_direction_2024, {
+      down: `${pan2024}, ${fmt.pct(pan.jan_apr_anomaly_2024_pct)} below its 2001-2025 January to April average of ${fmt.mm(pan.jan_apr_mean_mm)}.`,
+      up: `${pan2024}, ${fmt.pct(pan.jan_apr_anomaly_2024_pct)} above its 2001-2025 January to April average of ${fmt.mm(pan.jan_apr_mean_mm)}.`,
+      zero: `${pan2024}, equal to its 2001-2025 January to April average.`,
     }),
     trend: { id: 'trend', verdict: trend.verdict, direction: TREND_DIRECTION[trend.verdict], heading: TREND_HEADING[trend.verdict], text: trend.text },
     'trend-where': trendWhere,
@@ -244,7 +257,23 @@ export function buildClaims(a: Artifact): Claims {
       text: `${trendTie}${trendSentences.map((s) => s.text).join(' ')} ${meetingText}` },
     'next-year': { id: 'next-year', verdict: nextYear.direction, direction: nextYear.direction,
       heading: 'PAGASA expects El Niño into 2027',
-      text: `PAGASA's El Niño Advisory No. 5 says the current El Niño may last into the first half of 2027. ${nextYear.text}` },
+      text: `PAGASA's El Niño Advisory No. 5 says the current El Niño may last into the first half of 2027, which includes January to April. ${nextYear.text} This is history, not a forecast for 2027.` },
+    'season-window': { id: 'season-window', verdict: 'fixed', direction: 'none',
+      text: "January to April covers much of the country's dry cropping season. It is not a dry season everywhere. Eastern Type II areas, including Eastern Visayas and Caraga, are wet then." },
+    'pantabangan-context': { id: 'pantabangan-context', verdict: 'fixed', direction: 'none',
+      text: 'In April 2024, during a drought, low water in Pantabangan Lake in Nueva Ecija exposed more of the old town, submerged when the reservoir was built. Drag the line to compare 29 April 2023 with 15 April 2024.' },
+    'pantabangan-limit': { id: 'pantabangan-limit', verdict: 'fixed', direction: 'none',
+      text: 'Rainfall over this square is not reservoir storage. It does not measure inflows across the catchment, releases or evaporation. The January to April total also includes days after the 15 April photograph.' },
+    'comparison-limit': { id: 'comparison-limit', verdict: 'fixed', direction: 'none',
+      text: 'These are averages of what happened. They do not show what caused the difference, and they are not a forecast.' },
+    'method-totals': { id: 'method-totals', verdict: 'fixed', direction: 'none',
+      text: 'NASA POWER serves IMERG as daily totals in UTC days. We add them into months, then sum all twelve for each annual total and months one through four for each January to April total. Both windows stay within the same calendar year.' },
+    'method-weights': { id: 'method-weights', verdict: 'fixed', direction: 'none',
+      text: `Regional and national series use the same land-area weights for annual and January to April totals. Each square counts by its land area inside the boundary, times the cosine of its latitude. Border squares count toward every region they touch. We fit the trend and test only to the annual series. The ${regionCount} regions come from geoBoundaries ADM1, which still names the Bangsamoro region ARMM.` },
+    'method-enso': { id: 'method-enso', verdict: 'fixed', direction: 'none',
+      text: "A year began in El Niño when NOAA's December-to-February Oceanic Niño Index is +0.5 °C or more. This is this page's start-of-year rule, not NOAA's full episode definition. The map compares January to April totals in those years with the same months in other years. Annual comparisons remain as context. The comparison has no significance test and does not separate El Niño from other causes." },
+    'method-limits': { id: 'method-limits', verdict: 'fixed', direction: 'none',
+      text: 'Annual and January to April totals cannot show daily extremes, rain timing within either window or typhoon intensity. Coastal squares include sea. The Mann-Kendall test uses 25 annual values, with no correction for autocorrelation or multiple testing. Neighbouring squares are not independent. Nothing here is a forecast. The boundary files mark data coverage, not a position on territorial claims.' },
     audit: { id: 'audit', verdict: 'fixed', direction: 'none',
       text: `In ${audit.max_ratio_year}, MERRA-2 gave ${fmt.mm(audit.merra2_mm[peak] ?? Number.NaN)} at ${fmt.lon(audit.point[0])}, ${fmt.lat(audit.point[1])}, ${(audit.ratio[peak] ?? Number.NaN).toFixed(2)} times the ${fmt.mm(audit.imerg_mm[peak] ?? Number.NaN)} IMERG measured there. In the other ${audit.years.length - 1} years the ratio stayed between ${lowRatio.toFixed(2)} and ${highRatio.toFixed(2)}.` },
   };

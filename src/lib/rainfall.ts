@@ -19,6 +19,11 @@ const direction = z.enum(['up', 'down', 'zero']);
 const share = z.number().min(0).max(1);
 const yearPoint = z.object({ year: z.int().min(FIRST_YEAR), mm: z.number().nonnegative(), anomaly_pct: z.number() });
 
+const ensoComparison = z.object({
+  mean_mm: z.number().nonnegative(), other_mean_mm: z.number().positive(), diff_pct: z.number(), direction,
+  below_mean: z.int().nonnegative(), group_size: z.int().positive(), other_size: z.int().positive(),
+});
+
 const series = z.object({
   annual_mm: yearly,
   anomaly_pct: yearly,
@@ -30,10 +35,8 @@ const series = z.object({
   p: z.number().min(0).max(1),
   direction,
   meets_threshold: z.boolean(),
-  enso: z.object({
-    mean_mm: z.number().nonnegative(), other_mean_mm: z.number().positive(), diff_pct: z.number(), direction,
-    below_mean: z.int().nonnegative(), group_size: z.int().positive(), other_size: z.int().positive(),
-  }),
+  enso: ensoComparison,
+  jan_apr: z.object({ mm: yearly, mean_mm: z.number().positive(), anomaly_pct: yearly, enso: ensoComparison }),
   wettest: yearPoint,
   driest: yearPoint,
 });
@@ -65,7 +68,7 @@ const sign = z.union([z.literal(-1), z.literal(0), z.literal(1)]);
 const ranked = z.array(z.object({ id: regionId, share }));
 
 export const rainfallSchema = z.object({
-  schema: z.literal('ph-rain-imerg-v1'),
+  schema: z.literal('ph-rain-imerg-v2'),
   period: z.object({ start: z.literal(FIRST_YEAR), end: z.literal(2025), years: z.array(z.int()).length(YEAR_COUNT) }),
   alpha: z.literal(0.05),
   source: z.object({
@@ -99,14 +102,16 @@ export const rainfallSchema = z.object({
     weight: z.array(z.number().nonnegative()),
     mean_mm: z.array(z.int().positive()),
     annual_mm: z.array(z.int().nonnegative()),
+    jan_apr_mm: z.array(z.int().nonnegative()),
+    jan_apr_mean_mm: z.array(z.int().positive()),
     sen_mm_decade: z.array(z.number()),
     sen_pct_decade: z.array(z.number()),
     sen_mid_mm: z.array(z.int()),
     p: z.array(z.number().min(0).max(1)),
     trend_sign: z.array(sign),
     meets: z.array(z.union([z.literal(0), z.literal(1)])),
-    enso_diff_pct: z.array(z.number()),
-    enso_sign: z.array(sign),
+    jan_apr_enso_diff_pct: z.array(z.number()),
+    jan_apr_enso_sign: z.array(sign),
   }),
   facts: z.object({
     shares,
@@ -118,6 +123,8 @@ export const rainfallSchema = z.object({
     pantabangan: z.object({
       mean_mm: z.number().positive(), mm_2024: z.number().nonnegative(), anomaly_2024_pct: z.number(),
       direction_2024: direction, enso_diff_pct: z.number(), enso_direction: direction,
+      jan_apr_mean_mm: z.number().positive(), jan_apr_mm_2024: z.number().nonnegative(), jan_apr_anomaly_2024_pct: z.number(),
+      jan_apr_direction_2024: direction, jan_apr_enso_diff_pct: z.number(), jan_apr_enso_direction: direction,
     }),
     focus: z.object({
       wettest_mean_region: z.tuple([regionId], regionId),
@@ -142,8 +149,10 @@ export const rainfallSchema = z.object({
 }).superRefine((data, context) => {
   const { cells } = data;
   const perCell = [cells.row, cells.col, cells.region, cells.land_pct, cells.weight, cells.mean_mm, cells.sen_mm_decade,
-    cells.sen_pct_decade, cells.sen_mid_mm, cells.p, cells.trend_sign, cells.meets, cells.enso_diff_pct, cells.enso_sign];
-  if (perCell.some((column) => column.length !== cells.count) || cells.annual_mm.length !== cells.count * YEAR_COUNT) {
+    cells.sen_pct_decade, cells.sen_mid_mm, cells.p, cells.trend_sign, cells.meets,
+    cells.jan_apr_mean_mm, cells.jan_apr_enso_diff_pct, cells.jan_apr_enso_sign];
+  if (perCell.some((column) => column.length !== cells.count)
+    || [cells.annual_mm, cells.jan_apr_mm].some((column) => column.length !== cells.count * YEAR_COUNT)) {
     context.addIssue({ code: 'custom', path: ['cells'], message: 'Cell columns must match the cell count' });
   }
   for (let i = 1; i < cells.count; i += 1) {
@@ -193,6 +202,7 @@ export type CellGrid = {
   center(cell: CellIndex): [number, number];
   ring(cell: CellIndex): [number, number][];
   annual(cell: CellIndex): number[];
+  janApr(cell: CellIndex): number[];
 };
 
 export function decodeCells(a: Artifact): CellGrid {
@@ -223,6 +233,7 @@ export function decodeCells(a: Artifact): CellGrid {
       return [[west, south], [east, south], [east, north], [west, north], [west, south]];
     },
     annual: (cell) => cells.annual_mm.slice(cell * YEAR_COUNT, cell * YEAR_COUNT + YEAR_COUNT),
+    janApr: (cell) => cells.jan_apr_mm.slice(cell * YEAR_COUNT, cell * YEAR_COUNT + YEAR_COUNT),
   };
 }
 

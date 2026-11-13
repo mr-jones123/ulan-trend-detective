@@ -86,14 +86,14 @@ const description = `${claims['standfirst-enso'].text} ${claims['standfirst-tren
         <h2 id="method-heading" class="visually-hidden">Method</h2>
         <ol class="staircase">
           <li data-reveal><p class="stair">First, satellites watch the rain.</p><p>IMERG Final Run merges microwave and infrared satellite estimates with monthly rain gauges on a 0.1° grid.</p></li>
-          <li data-reveal><p class="stair">Then we add each square's days.</p><p>NASA POWER serves IMERG as daily totals in UTC days. We add them into 25 calendar years per square.</p></li>
+          <li data-reveal><p class="stair">Then we add each square's days.</p><p data-claim={claims['method-totals'].id} data-verdict={claims['method-totals'].verdict}>{claims['method-totals'].text}</p></li>
           <li data-reveal><p class="stair">We take the middle slope.</p><p>Sen's slope is the median of the 300 slopes between every pair of years, so one unusual year moves it less than it would move a straight-line fit.</p></li>
           <li data-reveal><p class="stair">Last, we ask if chance could do it.</p><p>The Mann-Kendall test gives p. Below 0.05, a change meets the test. The test assumes that years are independent.</p></li>
         </ol>
         <div class="method-notes">
-          <p>Regional and national series are area-weighted means of the squares' annual totals. Each square counts by its area of land inside the region, times the cosine of its latitude. A square on a regional border counts toward every region it touches. The trend and test are then fitted to that aggregated series. The {artifact.regions.length} regions come from the geoBoundaries ADM1 file, which still names the Bangsamoro region ARMM.</p>
-          <p>A year "began in El Niño" when NOAA's Oceanic Niño Index for December to February is +0.5 °C or more. This is a simple rule for this page, not NOAA's full episode definition. The rule looks at the start of each year because every total here covers one calendar year. The comparison is descriptive. It has no significance test, and it does not separate El Niño from typhoons, trends or other causes.</p>
-          <p>Annual totals cannot show extremes, the timing of the dry season, or typhoon intensity. Squares are drawn at their full 0.1° size, so coastal squares include sea. The Mann-Kendall test here uses n = 25, with no correction for autocorrelation or for testing many squares at once, and neighbouring squares are not independent. Nothing on this page is a forecast. The boundary files mark the area the data covers and do not state a position on territorial claims.</p>
+          <p data-claim={claims['method-weights'].id} data-verdict={claims['method-weights'].verdict}>{claims['method-weights'].text}</p>
+          <p data-claim={claims['method-enso'].id} data-verdict={claims['method-enso'].verdict}>{claims['method-enso'].text}</p>
+          <p data-claim={claims['method-limits'].id} data-verdict={claims['method-limits'].verdict}>{claims['method-limits'].text}</p>
           <details class="why-imerg">
             <summary>Why we use IMERG</summary>
             <p>We first built this map from NASA POWER's MERRA-2 rainfall, and checked it against IMERG at one point near Manila.</p>

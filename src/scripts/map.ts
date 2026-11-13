@@ -91,7 +91,7 @@ export function createMap(options: {
     properties: {
       mean: a.cells.mean_mm[cell] ?? 0,
       trend: a.cells.sen_pct_decade[cell] ?? 0,
-      enso: a.cells.enso_diff_pct[cell] ?? 0,
+      enso: a.cells.jan_apr_enso_diff_pct[cell] ?? 0,
       meets: a.cells.meets[cell] ?? 0,
     },
   }));
