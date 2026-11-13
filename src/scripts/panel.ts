@@ -42,6 +42,8 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
     enso: one<HTMLElement>(root, '[data-fact="enso"]'),
     land: one<HTMLElement>(root, '[data-fact="land"]'),
     landRow: one<HTMLElement>(root, '[data-fact-row="land"]'),
+    cropland: one<HTMLElement>(root, '[data-fact="cropland"]'),
+    croplandRow: one<HTMLElement>(root, '[data-fact-row="cropland"]'),
   };
   const exploreChart = one<HTMLElement>(root, '[data-place-chart="explore"]');
   const storyChart = one<HTMLElement>(root, '[data-place-chart="story"]');
@@ -91,7 +93,7 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
   function renderPlace(state: ViewState) {
     const place = placeFor(state);
     const selectedYear = state.mode === 'year' ? state.year : null;
-    const seasonal = state.mode === 'enso';
+    const seasonal = state.mode === 'enso' || state.mode === 'farm';
     const totals = seasonal ? place.janApr : place.annual;
     const key = `${place.key}:${state.mode}:${selectedYear ?? ''}`;
     if (key === shown.place) return;
@@ -103,6 +105,8 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
     facts.enso.textContent = `${fmt.signedPct(place.ensoDiffPct)} against other years, January to April`;
     facts.landRow.hidden = place.landPct === null;
     facts.land.textContent = place.landPct === null ? '' : `${place.landPct}%`;
+    facts.croplandRow.hidden = place.croplandPct === null;
+    facts.cropland.textContent = place.croplandPct === null ? '' : `${place.croplandPct}% of land pixels, 2020`;
     exploreChart.innerHTML = chartHtml(placeChart(a, place, selectedYear, state.mode));
     caption.textContent = `${place.heading}, ${seasonal ? 'January to April' : 'annual'} rainfall in mm`;
     table.replaceChildren(...a.period.years.map((year, index) => {
@@ -171,7 +175,7 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
         const link = document.createElement('a');
         link.href = '#explore';
         link.textContent = 'Open in the explorer';
-        const summary = state.mode === 'enso'
+        const summary = state.mode === 'enso' || state.mode === 'farm'
           ? `${fmt.mm(place.janAprMean)} in an average January to April, ${fmt.signedPct(place.ensoDiffPct)} in El Niño-start years against other years.`
           : `${fmt.mm(place.mean)} in an average year, ${fmt.signedPct(place.pctDecade)} per decade.`;
         readout.append(strong, ` ${summary} `, link);

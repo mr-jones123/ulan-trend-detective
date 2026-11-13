@@ -1,6 +1,6 @@
 # Ulan, measured
 
-A static data story about 25 years of NASA satellite rainfall over the Philippines, 2001 to 2025. It maps 3,735 native IMERG squares, fits one annual trend method to every square, region and the country, and compares January to April rainfall in years that began in El Niño with the other years. A reader can find their own square and read all 25 annual or January to April totals.
+A static data story about 25 years of NASA satellite rainfall over the Philippines, 2001 to 2025. It maps 3,735 native IMERG squares, fits one annual trend method to every square, region and the country, and compares January to April rainfall in years that began in El Niño with the other years. A 2020 MODIS cropland mask adds farmland-weighted rain and clear-sky day and night surface temperatures at 12 cropland sites. A reader can find their own square, inspect its cropland share and read all 25 annual or January to April rainfall totals.
 
 The site is one Astro page and one Python data builder. It has no backend and makes no NASA request from the browser. Every number in the prose is rendered into static HTML at build time from the same JSON file the map loads.
 
@@ -26,10 +26,10 @@ npm run preview -- --host 127.0.0.1
 Rebuild the artifact from the pinned snapshots. This needs no network.
 
 ```sh
-uv run --frozen --offline scripts/build_rainfall.py
+uv run --frozen --offline scripts/build_rainfall.py --offline
 ```
 
-A plain run downloads a snapshot only when its file is missing. `--refresh` downloads every small snapshot again and then rebuilds the IMERG cube through `scripts/imerg.py`, which reuses hash-verified cache entries in `data/cache/imerg/` and fetches only missing tile-years.
+A plain run downloads a snapshot only when its file is missing. `--refresh` downloads every small snapshot again, rebuilds the IMERG cube through `scripts/imerg.py`, and derives the farm snapshot through `scripts/modis.py`. Both acquisitions reuse hash-verified raw cache entries. The builder's `--offline` flag rejects missing snapshots without making a network request. The `uv --offline` flag alone controls dependency resolution, not Python's network access.
 
 ```sh
 uv run --frozen scripts/build_rainfall.py --refresh
@@ -37,13 +37,15 @@ uv run --frozen scripts/build_rainfall.py --refresh
 
 To refetch the raw IMERG tiles on their own, run `uv run --frozen scripts/imerg.py`. Add `--offline` to rebuild the cube from the cache only. The raw cache is about 360 MB and is ignored by git.
 
-The builder validates every input before it replaces any file. Each write is atomic. A failed download or validation exits with an error and publishes nothing. Output JSON has sorted keys and fixed rounding, and the provenance records keep their original retrieval times, so an offline replay reproduces `public/data/philippines-rainfall.json` byte for byte.
+MODIS acquisition uses three concurrent requests with up to five attempts and exponential backoff. `uv run --frozen scripts/modis.py --offline` rebuilds the farm snapshot from the raw cache without the network. Each raw response is stored in `data/cache/modis/` with its URL, retrieval time, byte length and SHA-256 in a sidecar. The cache is ignored by git. The compact committed snapshot contains the per-square shares, site windows, cropland pixel counts and all retained or rejected day and night composite means. A rejected composite is `null`, not zero.
+
+The builder validates inputs before replacing the artifact. Each file write is atomic. A failed acquisition can retain verified cache entries and completed source snapshots, but it does not publish a new artifact. Output JSON has sorted keys and fixed rounding, and the provenance records keep their original retrieval times, so an offline replay reproduces `public/data/philippines-rainfall.json` byte for byte.
 
 ## Dependencies
 
 JavaScript: Astro 7.4.1, MapLibre GL JS 6.15.0, Zod 4.6.7, `@fontsource/imbue` 5.3.0 and `@fontsource/albert-sans` 5.3.0. Development: `@astrojs/check` 0.9.11, TypeScript ~6.0.3, `@types/node` 24.19.2 for the page's build-time file read, and `@maplibre/maplibre-gl-style-spec` 26.4.4, which supplies the style and expression types that `maplibre-gl` 6 does not re-export.
 
-Python: Shapely 2.2 only. Its wheel pulls in NumPy. The statistics use the Python standard library.
+Python uses Shapely 2.2 and NumPy 2.5.4. NumPy arrays support the MODIS sinusoidal pixel mapping. The statistics use the Python standard library.
 
 ## Sources and licenses
 
@@ -54,8 +56,9 @@ Python: Shapely 2.2 only. Its wheel pulls in NumPy. The statistics use the Pytho
 | `data/sources/adm1.json.gz` | geoBoundaries gbOpen PHL ADM1, revision `41af8f1e141eb6826ab9877e306df6f848b9ff0b`, 17 regions | CC BY 3.0 IGO |
 | `data/sources/oni.txt.gz` | NOAA CPC Oceanic Niño Index, `oni.ascii.txt` | US government data |
 | `data/sources/audit/*.json.gz` | NASA POWER point requests at 121.25° E, 14.5° N used only for the source audit below | NASA data |
+| `data/sources/modis-farm.json.gz` | [ORNL DAAC MODIS REST API](https://modis.ornl.gov/rst/api/v1/), derived from LP DAAC [MCD12Q1 land cover](https://doi.org/10.5067/MODIS/MCD12Q1.061), Friedl and Sulla-Menashe (2022), and [MOD11A2 surface temperature](https://doi.org/10.5067/MODIS/MOD11A2.061), Wan, Hook and Hulley (2021) | NASA open data, no credentials for subsets |
 
-`data/sources/manifest.json` records each snapshot's URL, SHA-256 of the uncompressed bytes, byte length and retrieval time. Its `imerg` entry points to `imerg-manifest.json`, which lists all 900 tile requests with their hashes. Each `.gz` file stores the original response bytes.
+`data/sources/manifest.json` records each small snapshot's URL, SHA-256 of the uncompressed bytes, byte length and retrieval time. Its `imerg` entry points to `imerg-manifest.json`, which lists all 900 tile requests with their hashes. These small `.gz` files store the original response bytes. `modis-manifest.json` lists every land-cover and temperature request URL and the SHA-256 of its raw response bytes. It also records the compressed derived snapshot hash and pinned ADM0 hash. The artifact preserves both the MODIS snapshot hash and manifest hash.
 
 The basemap is OpenFreeMap's Positron style, built on OpenMapTiles and OpenStreetMap data. MapLibre shows its attribution on the map. The project does not proxy, prefetch or download tiles. See the [OpenFreeMap terms](https://openfreemap.org/tos/).
 
@@ -84,9 +87,15 @@ Imbue and Albert Sans are under the SIL Open Font License 1.1. The page loads on
 
 **El Niño-start years.** A year began in El Niño when NOAA's December-to-February ONI for that year is +0.5 °C or more. The comparison reports the two group means, the difference as a percentage of the other years' mean, and how many El Niño-start years fell below the 2001-2025 mean for the same window. The map, regional rankings and land shares use January to April. National and regional annual comparisons remain as context. The comparison is descriptive and has no test.
 
+**Cropland.** MCD12Q1 `LC_Type1`, year 2020, class 12 defines cropland. The acquisition reads 100 km windows on centres `(5.5 + 1.8i, 117.8 + 1.8j)`, for `i < 9`, `j < 6`, keeping windows whose ±1° longitude by ±0.95° latitude box intersects ADM0. It deduplicates pixels by their global sinusoidal indices. Pixel centres use a sphere of radius 6,371,007.181 m, `lat = y/R`, `lon = x/(R cos(lat))`. Rows run north to south. Each IMERG square gets the rounded integer percentage of its 500 m pixel centres inside ADM0 that are class 12. Tiny coastal slivers without a pixel centre get zero. The national cropland rain weight is the existing land weight multiplied by that integer share. The farmland map ghosts squares with less than 10% cropland. It still colours visible squares by the unchanged January to April El Niño rain comparison.
+
+**Farm sites and temperature.** Cropland pixel centres are binned to the nearest half degree with Python's `round(value * 2) / 2`. Bins are ranked by cropland pixel count, with latitude then longitude breaking ties. A bin is kept when every earlier site is at least 1° away in latitude or longitude, until 12 sites are selected. MOD11A2 windows extend 25 km in each direction from those centres. Their actual sinusoidal window outlines are shipped to the map. A 1 km pixel `(IX, IY)` covers the four 500 m pixels with indices `(2IX + dx, 2IY + dy)`, where `dx` and `dy` are 0 or 1. At least three must be cropland inside ADM0.
+
+Day and night temperature use separate `LST_Day_1km` and `LST_Night_1km` requests for days 001-073 and 081-113, at most ten 8-day composites per request. Values are multiplied by 0.02 K and converted to °C. Zero is fill. No additional QC-band filter is applied. A composite is retained only when at least 30% of the site's cropland pixels have valid values. Its value is their arithmetic mean. Each site-year is the arithmetic mean of retained composites, not a day-weighted average. Every site-year must have a retained composite. The national temperature series is the equal-weight mean of those 12 site-years, not a countrywide area mean. The builder stores Sen slopes in °C per decade, Mann-Kendall p, unrounded direction and test decisions, and the descriptive El Niño-start minus other-years gap in °C. It also refits 2001-2019 before Terra's post-2020 orbit drift.
+
 **Story copy.** `src/lib/story.ts` picks every scientific sentence from a table of wordings keyed by the computed result. `assertClaims` fails the build when a claim is missing, when a sentence uses a direction word that contradicts its result, or when a heading is longer than 44 characters. Each claim renders with `data-claim` and `data-verdict`.
 
-**Artifact schema.** `ph-rain-imerg-v2` adds `jan_apr` to each national and regional series with `mm`, `mean_mm`, `anomaly_pct` and `enso`. Cell columns contain flattened `jan_apr_mm`, `jan_apr_mean_mm`, `jan_apr_enso_diff_pct` and `jan_apr_enso_sign`. The former annual per-cell El Niño columns are removed. The El Niño explorer shows January to April bars and totals without an annual trend line. Average, one-year and trend map modes stay annual.
+**Artifact schema.** `ph-rain-imerg-v3` retains the annual and January to April IMERG records and adds integer `cells.cropland_pct`. `farm.rain` holds the cropland-weighted January to April rain series and El Niño comparison. `farm.day` and `farm.night` hold site-mean °C series, trends, tests, El Niño differences and 2001-2019 refits. `farm.sites` holds the 12 derived centres, window outlines, 1 km cropland pixel counts and corresponding day and night records. `farm.night_rising_meets` counts sites whose rising night slope meets the unadjusted test. `provenance.modis` pins the derived snapshot and request manifest. The El Niño and farmland map modes use January to April rain. Average, one-year and trend map modes stay annual. Farm charts reuse `chartHtml` with °C units rather than a separate chart renderer.
 
 ## Results at build time
 
@@ -98,6 +107,10 @@ These are the values in the current artifact. They come from the builder's outpu
 - All 17 regions and 100.0% of land had less January to April rain in El Niño-start years. The widest regional gap is Eastern Visayas, −73.1%.
 - The Pantabangan square received 121 mm from January to April 2024 against its 212 mm average, a 42.9% deficit. Its January to April El Niño comparison is −56.8%. Its annual 2024 total was 1.6% above average.
 - Mimaropa has the largest fitted change of the 17 regions, +10.8% per decade, p = 0.047. Calabarzon and Mimaropa are the two regions that meet the test.
+- Class 12 Croplands account for 95,183 of 1,222,310 deduplicated 500 m pixel centres inside ADM0, 7.79%. Class 14 cropland/natural vegetation mosaics are excluded, not partially counted. This differs from a cropland-equivalent estimate that includes mosaics.
+- Cropland-weighted January to April rain averaged 171.3 mm in El Niño-start years against 436.1 mm in other years, 60.7% less.
+- The 12-site mean daytime January to April surface temperature was 1.23 °C warmer in El Niño-start years. Its 2001-2025 slope was −0.29 °C per decade, p = 0.168, which does not meet the test.
+- Night surface temperature rose 0.26 °C per decade, p = 0.029855. Seven of the 12 sites had a rising night slope that met the test. The 2001-2019 site-mean refit was +0.22 °C per decade, p = 0.294, which does not meet the test. Night temperatures in El Niño-start years averaged 0.17 °C warmer than in other years.
 
 ## Why the map moved from MERRA-2 to IMERG
 
@@ -109,6 +122,8 @@ The builder recomputes this audit from the two preserved point responses in `dat
 
 Annual and January to April totals cannot show daily extremes, rainfall timing within either window or typhoon intensity. Rainfall over the Pantabangan square is not reservoir storage and does not measure catchment inflows, releases or evaporation. The January to April 2024 total includes days after the 15 April photograph. Coastal squares include sea. The trend test assumes independent years, and testing 3,735 neighbouring squares means about 5% of land could meet the test by chance even with no trend, as a rough guide only. The El Niño comparison does not separate El Niño from other causes. Nothing on the page is a forecast. The boundary files mark the area the data covers and do not state a position on territorial claims. The ADM1 file still names the Bangsamoro region ARMM.
 
+MODIS land surface temperature is not air temperature. Clear-sky sampling excludes cloud-covered fields. The fixed 2020 mask does not describe land-use change during 2001-2025, and the 12 dense cropland sites are not a representative sample of all farms. Terra's orbit drift moved overpasses earlier after 2020, so the full-record temperature trend cannot separate climate from observation-time effects. The 2001-2019 refit is disclosed beside the full-record trend. [Peng et al. (2004)](https://doi.org/10.1073/pnas.0403720101), PNAS 101(27), 9971-9975, reported about 10% less dry-season rice grain yield per +1 °C of minimum air temperature at IRRI in Los Baños. That study is context only. This page does not estimate Philippine yield loss.
+
 ## Map behaviour
 
 - The map is one MapLibre instance in a sticky column. The story chapters and the explorer share it.
@@ -116,18 +131,22 @@ Annual and January to April totals cannot show daily extremes, rainfall timing w
 - On touch screens during the story, MapLibre's cooperative gestures keep one-finger page scrolling free. In the explorer every gesture works.
 - A manual zoom, pan or selection hands the map to the reader. Scrolling then updates the active chapter but leaves the camera alone. A chapter link, a "Next" link or "Back to the story view" returns the map to the story.
 - The label transform replaces every place-name `text-field` with English, then Latin-script names, keeps road shields, and removes the two `water_name` layers. The client fetches and transforms the style before it creates the map. If the style fails or takes longer than 8 seconds, a plain local style keeps the rainfall squares usable.
+- Farmland mode shows the same January to April rain gaps, with squares below 10% cropland ghosted and all 12 temperature windows outlined. The explorer reports a selected square's cropland share and offers site-mean day and night temperature charts.
 - The root element carries `data-state`, `data-basemap`, `data-phase`, `data-chapter`, `data-owner`, `data-mode`, `data-year`, `data-focus`, `data-camera` and `data-cells` for browser checks.
 
 ## Sizes
 
-- `public/data/philippines-rainfall.json` is 1,184,771 bytes, 434,896 bytes gzipped.
+- `public/data/philippines-rainfall.json` is 1,208,074 bytes, 441,318 bytes gzipped.
 - `data/sources/imerg-monthly.json.gz` is 3,008,202 bytes.
+- `data/sources/modis-farm.json.gz` is 88,912 bytes. Its 1,239-request manifest is 380,839 bytes. The two committed additions total 469,751 bytes.
+- The ignored MODIS raw cache and sidecars total 27,457,996 bytes. Acquisition made 39 land-cover requests and 1,200 temperature requests.
 - The five pictures total 1,715,781 bytes.
 
 ## File ownership
 
 - `scripts/imerg.py` owns IMERG acquisition, the raw cache and the monthly cube.
-- `scripts/build_rainfall.py` owns snapshot pinning, weights, statistics, legend breaks, story facts and the artifact.
+- `scripts/modis.py` owns MODIS acquisition, response validation, the hash-verified raw cache, cropland mapping, deterministic site selection and composite reduction.
+- `scripts/build_rainfall.py` owns snapshot pinning, weights, rainfall and temperature statistics, legend breaks, story facts and the artifact.
 - `data/sources/` holds the preserved snapshots and their manifests.
 - `src/lib/rainfall.ts` owns the artifact schema, its types and the cell grid.
 - `src/lib/story.ts` owns formatting, the claim registry and the direction-word guard.
@@ -135,4 +154,4 @@ Annual and January to April totals cannot show daily extremes, rainfall timing w
 - `src/lib/basemap.ts`, `src/lib/colour.ts`, `src/lib/chart.ts` and `src/lib/place.ts` own the label transform, the colour scales, the place chart and place summaries.
 - `src/scripts/main.ts` wires loading, scrolling, controls and geolocation. `src/scripts/map.ts` owns the MapLibre instance. `src/scripts/panel.ts` renders the legend and explorer. `src/scripts/compare.ts` and `src/scripts/reveal.ts` own the image slider and section entrances.
 - `src/components/Story.astro` and `src/pages/index.astro` own the markup and fixed copy. `src/styles/global.css` owns the layout.
-- `tests/test_build_rainfall.py` covers Sen and Mann-Kendall against the independent point series, ties, flat series, leap days, missing days, fill values, weighted means, same-calendar-year January to April aggregation, seasonal versus annual El Niño comparisons, the El Niño threshold, edge containment, legend breaks and tied regions.
+- `tests/test_build_rainfall.py` covers Sen and Mann-Kendall against the independent point series, ties, flat series, leap days, missing days, fill values, weighted means, same-calendar-year January to April aggregation, seasonal versus annual El Niño comparisons, the El Niño threshold, edge containment, legend breaks, tied regions, sinusoidal geolocation, nested MODIS pixels, cropland and composite-validity thresholds, site spacing and temperature refits.

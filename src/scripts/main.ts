@@ -322,7 +322,8 @@ function run(app: HTMLElement, a: Artifact, stylePromise: Promise<{ style: Style
       if (!bar || !tag || !svg) return;
       const width = svg.viewBox.baseVal.width || 1;
       const x = Number(bar.getAttribute('x')) + Number(bar.getAttribute('width')) / 2;
-      tag.textContent = `${bar.dataset.year}, ${fmt.mm(Number(bar.dataset.mm))}${bar.dataset.enso === 'true' ? ', began in El Niño' : ''}`;
+      const value = Number(bar.dataset.value);
+      tag.textContent = `${bar.dataset.year}, ${bar.dataset.unit === '°C' ? `${value.toFixed(2)} °C` : fmt.mm(value)}${bar.dataset.enso === 'true' ? ', began in El Niño' : ''}`;
       tag.style.left = `${(x / width) * 100}%`;
       tag.dataset.instant = tag.hidden ? 'false' : 'true';
       tag.hidden = false;

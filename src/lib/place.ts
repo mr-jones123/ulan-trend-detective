@@ -18,6 +18,7 @@ export type Place = {
   readonly ensoDiffPct: number;
   readonly ensoDirection: Direction;
   readonly landPct: number | null;
+  readonly croplandPct: number | null;
   readonly kind: Focus['kind'];
 };
 
@@ -28,7 +29,7 @@ function fromSeries(key: string, heading: string, kind: Focus['kind'], s: Series
     key, heading, kind, annual: s.annual_mm, mean: s.mean_mm, senPerDecade: s.sen_mm_decade, pctDecade: s.sen_pct_decade,
     janApr: s.jan_apr.mm, janAprMean: s.jan_apr.mean_mm,
     mid: s.sen_mid_mm, p: s.p, meets: s.meets_threshold,
-    ensoDiffPct: s.jan_apr.enso.diff_pct, ensoDirection: s.jan_apr.enso.direction, landPct: null,
+    ensoDiffPct: s.jan_apr.enso.diff_pct, ensoDirection: s.jan_apr.enso.direction, landPct: null, croplandPct: null,
   };
 }
 
@@ -54,6 +55,7 @@ export function placeOf(a: Artifact, grid: CellGrid, focus: Focus): Place {
         janApr: grid.janApr(i), janAprMean: c.jan_apr_mean_mm[i] ?? 0,
         ensoDiffPct: c.jan_apr_enso_diff_pct[i] ?? 0,
         ensoDirection: SIGN_DIRECTION[c.jan_apr_enso_sign[i] ?? 0], landPct: c.land_pct[i] ?? null,
+        croplandPct: c.cropland_pct[i] ?? null,
       };
     }
     default: {
@@ -64,13 +66,31 @@ export function placeOf(a: Artifact, grid: CellGrid, focus: Focus): Place {
 }
 
 export function placeChart(a: Artifact, place: Place, selectedYear: number | null, mode: Mode): ChartInput {
-  const seasonal = mode === 'enso';
+  const seasonal = mode === 'enso' || mode === 'farm';
   return {
+    unit: 'mm',
+    summary: seasonal
+      ? `January to April rainfall in El Niño-start years was ${fmt.signedPct(place.ensoDiffPct)} against other years. History, not a forecast.`
+      : `Fitted change ${fmt.signedPct(place.pctDecade)} per decade (${fmt.pSameSideOfAlpha(place.p, place.meets, a.alpha)}), ${place.meets ? 'meets the unadjusted p < 0.05 test' : 'could be chance'}.`,
     key: `${place.key}:${seasonal ? 'jan_apr' : 'annual'}`, name: place.heading, years: a.period.years,
     totals: seasonal ? place.janApr : place.annual, period: seasonal ? 'January to April' : 'annual',
     enso: a.enso.began_el_nino, mean: seasonal ? place.janAprMean : place.mean,
-    trend: seasonal ? null : { senPerDecade: place.senPerDecade, mid: place.mid, pctDecade: place.pctDecade,
+    trend: seasonal ? null : { senPerDecade: place.senPerDecade, mid: place.mid,
+      label: place.meets ? `${fmt.signedPct(place.pctDecade)} per decade` : `could be chance, ${fmt.pSameSideOfAlpha(place.p, place.meets, a.alpha)}`,
       p: place.p, meets: place.meets, alpha: a.alpha },
-    ensoDiffPct: place.ensoDiffPct, selectedYear,
+    selectedYear,
+  };
+}
+
+export function farmChart(a: Artifact, period: 'day' | 'night', summary: string): ChartInput {
+  const s = a.farm[period];
+  return {
+    key: `farm:${period}`, name: `Cropland sites, ${period} surface temperature`, years: a.period.years,
+    totals: s.c, period: 'January to April', unit: '°C', summary,
+    enso: a.enso.began_el_nino, mean: s.mean_c, selectedYear: null,
+    trend: { senPerDecade: s.sen_c_decade, mid: s.sen_mid_c,
+      label: s.meets_threshold ? `${s.sen_c_decade > 0 ? '+' : ''}${s.sen_c_decade.toFixed(2)} °C per decade`
+        : `could be chance, ${fmt.pSameSideOfAlpha(s.p, s.meets_threshold, a.alpha)}`,
+      p: s.p, meets: s.meets_threshold, alpha: a.alpha },
   };
 }

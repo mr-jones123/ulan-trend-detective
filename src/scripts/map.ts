@@ -93,6 +93,7 @@ export function createMap(options: {
       trend: a.cells.sen_pct_decade[cell] ?? 0,
       enso: a.cells.jan_apr_enso_diff_pct[cell] ?? 0,
       meets: a.cells.meets[cell] ?? 0,
+      cropland: a.cells.cropland_pct[cell] ?? 0,
     },
   }));
 
@@ -100,6 +101,11 @@ export function createMap(options: {
     const before = firstSymbolLayer(options.style);
     map.addSource('cells', { type: 'geojson', data: { type: 'FeatureCollection', features } });
     map.addSource('selected', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addSource('farm-sites', { type: 'geojson', data: {
+      type: 'FeatureCollection', features: a.farm.sites.map((site) => ({
+        type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [site.outline] },
+      })),
+    } });
     map.addLayer({ id: 'rain', type: 'fill', source: 'cells', paint: { 'fill-color': colourExpression(a, 'mean'), 'fill-opacity': BASE_OPACITY } }, before);
     map.addLayer({
       id: 'rain-edges', type: 'line', source: 'cells', minzoom: 8,
@@ -107,6 +113,8 @@ export function createMap(options: {
     }, before);
     map.addLayer({ id: 'selected-casing', type: 'line', source: 'selected', paint: { 'line-color': PAPER, 'line-width': 5 } }, before);
     map.addLayer({ id: 'selected-line', type: 'line', source: 'selected', paint: { 'line-color': INK, 'line-width': 2.5 } }, before);
+    map.addLayer({ id: 'farm-sites', type: 'line', source: 'farm-sites', layout: { visibility: 'none' },
+      paint: { 'line-color': INK, 'line-width': 1.5, 'line-dasharray': [3, 2] } }, before);
     ready = true;
     options.onReady(features.length);
     if (pending !== null) render(pending);
@@ -134,7 +142,9 @@ export function createMap(options: {
   function opacity(state: ViewState): ExpressionSpecification {
     const base: ExpressionSpecification | number = state.mode === 'trend'
       ? ['case', ['==', ['get', 'meets'], 1], BASE_OPACITY, UNMET_TREND_OPACITY[state.unmetTrendStyle]]
-      : BASE_OPACITY;
+      : state.mode === 'farm'
+        ? ['case', ['>=', ['get', 'cropland'], a.farm.map_threshold_pct], BASE_OPACITY, 0.06]
+        : BASE_OPACITY;
     return ['*', base, ['case', ['boolean', ['feature-state', 'dim'], false], 0.25, 1]];
   }
 
@@ -187,7 +197,10 @@ export function createMap(options: {
       pending = state;
       return;
     }
-    if (state.mode !== applied.mode) map.setPaintProperty('rain', 'fill-color', colourExpression(a, state.mode));
+    if (state.mode !== applied.mode) {
+      map.setPaintProperty('rain', 'fill-color', colourExpression(a, state.mode));
+      map.setLayoutProperty('farm-sites', 'visibility', state.mode === 'farm' ? 'visible' : 'none');
+    }
     if (state.mode !== applied.mode || state.unmetTrendStyle !== applied.unmetTrendStyle) map.setPaintProperty('rain', 'fill-opacity', opacity(state));
     if (state.mode === 'year' && state.year !== applied.year) {
       applyYear(state.year);

@@ -71,6 +71,7 @@ export const CLAIM_IDS = [
   'enso-region', 'pantabangan-enso', 'pantabangan-2024', 'trend', 'trend-where', 'trend-where-other',
   'trend-region', 'next-year', 'audit', 'season-window', 'pantabangan-context', 'pantabangan-limit',
   'comparison-limit', 'method-totals', 'method-weights', 'method-enso', 'method-limits',
+  'farm-rain', 'farm-day', 'farm-night', 'farm-sites', 'farm-drift', 'farm-context', 'farm-limit', 'farm-chart', 'method-farm',
 ] as const;
 export type ClaimId = (typeof CLAIM_IDS)[number];
 
@@ -215,6 +216,19 @@ export function buildClaims(a: Artifact): Claims {
   const swing = f.swing;
   const wettestIds = f.focus.wettest_mean_region;
   const driestIds = f.focus.driest_mean_region;
+  const farm = a.farm;
+  const farmGap = farm.rain.enso;
+  const day = farm.day;
+  const night = farm.night;
+  const nightVerdict = trendVerdict(night);
+  const thermalWord: Record<Direction, string> = { up: 'warmer', down: 'cooler', zero: 'unchanged' };
+  const temperatureGap = day.enso_direction === 'zero' ? 'had the same daytime surface temperature'
+    : `were ${Math.abs(day.enso_diff_c).toFixed(2)} °C ${thermalWord[day.enso_direction]} by day`;
+  const nightChange = night.direction === 'zero' ? 'has a zero fitted slope'
+    : `${night.direction === 'up' ? 'rose' : 'fell'} ${Math.abs(night.sen_c_decade).toFixed(2)} °C per decade`;
+  const refit = night.refit;
+  const refitChange = refit.direction === 'zero' ? 'a zero slope'
+    : `${refit.direction === 'up' ? '+' : '−'}${Math.abs(refit.sen_c_decade).toFixed(2)} °C per decade`;
 
   const claims: Claims = {
     'standfirst-enso': { id: 'standfirst-enso', verdict: enso.direction,
@@ -251,6 +265,35 @@ export function buildClaims(a: Artifact): Claims {
       up: `${pan2024}, ${fmt.pct(pan.jan_apr_anomaly_2024_pct)} above its 2001-2025 January to April average of ${fmt.mm(pan.jan_apr_mean_mm)}.`,
       zero: `${pan2024}, equal to its 2001-2025 January to April average.`,
     }),
+    'farm-rain': {
+      ...gapClaim('farm-rain', farmGap.direction, {
+        down: `Across cropland-weighted IMERG squares, January to April rain averaged ${fmt.pct(farmGap.diff_pct)} less in El Niño-start years than in other years, ${fmt.mm(farmGap.mean_mm)} against ${fmt.mm(farmGap.other_mean_mm)}.`,
+        up: `Across cropland-weighted IMERG squares, January to April rain averaged ${fmt.pct(farmGap.diff_pct)} more in El Niño-start years than in other years, ${fmt.mm(farmGap.mean_mm)} against ${fmt.mm(farmGap.other_mean_mm)}.`,
+        zero: 'Across cropland-weighted IMERG squares, January to April rain averaged the same in El Niño-start years and other years.',
+      }),
+      heading: 'Farmland in El Niño-start years',
+    },
+    'farm-day': { id: 'farm-day', verdict: day.enso_direction,
+      direction: day.enso_direction === 'zero' ? 'none' : day.enso_direction,
+      text: `Across ${farm.sites.length} cropland sites, January to April fields ${temperatureGap} in El Niño-start years ${day.enso_direction === 'zero' ? 'as' : 'than'} in other years. This is an equal-weight mean of the outlined sites, not every farm in the country.` },
+    'farm-night': { id: 'farm-night', verdict: nightVerdict, direction: TREND_DIRECTION[nightVerdict],
+      heading: { rise_meets: 'Farm nights are warming', fall_meets: 'Farm nights are cooling',
+        rise: 'Farm nights could be warming', fall: 'Farm nights could be cooling', zero: 'Farm nights have no fitted change' }[nightVerdict],
+      text: `The site-mean January to April night surface temperature ${nightChange} over 2001-2025. It ${night.meets_threshold ? 'meets' : 'does not meet'} the unadjusted p < 0.05 test (${fmt.pSameSideOfAlpha(night.p, night.meets_threshold, alpha)}).` },
+    'farm-sites': { id: 'farm-sites', verdict: farm.night_rising_meets === 0 ? 'none' : 'up',
+      direction: farm.night_rising_meets === 0 ? 'none' : 'up',
+      text: farm.night_rising_meets === 0 ? 'No site has a positive night slope that meets the test.'
+        : `At ${farm.night_rising_meets} of ${farm.sites.length} sites, a rising night slope meets the test.` },
+    'farm-drift': { id: 'farm-drift', verdict: trendVerdict(refit), direction: 'none',
+      text: `Terra's orbit drift after 2020 moved its overpasses earlier. Refitting only 2001-2019 gives ${refitChange} (${fmt.pSameSideOfAlpha(refit.p, refit.meets_threshold, alpha)}), which ${refit.meets_threshold ? 'meets' : 'does not meet'} the test. The full-record result cannot separate climate from changing observation time.` },
+    'farm-context': { id: 'farm-context', verdict: 'context-only', direction: 'mixed',
+      text: 'Peng and colleagues reported in 2004 that dry-season rice grain yield at IRRI in Los Baños fell about 10% per 1 °C of higher minimum air temperature. Their January to April field study is context, not a conversion from these satellite observations to Philippine yield loss.' },
+    'farm-limit': { id: 'farm-limit', verdict: 'fixed', direction: 'none',
+      text: 'MODIS measures land surface temperature under clear skies, not air temperature. Clouds hide observations, and the sites are selected for cropland density, not as a representative national sample. A fixed 2020 cropland mask does not track land-use change. These comparisons are descriptive, not evidence that El Niño caused each difference.' },
+    'farm-chart': { id: 'farm-chart', verdict: 'fixed', direction: 'none',
+      text: 'January to April clear-sky surface temperature, equal-weight site mean.' },
+    'method-farm': { id: 'method-farm', verdict: 'fixed', direction: 'none',
+      text: `MCD12Q1 LC_Type1 class 12 in 2020 defines cropland. Each square's integer share counts cropland among 500 m pixel centres inside ADM0. Rain weights multiply land weight by that share. Squares with at least ${farm.map_threshold_pct}% cropland are visible in the farmland view; the rest are ghosted. The ${farm.sites.length} densest half-degree cropland cells are selected greedily, with at least 1° separation in latitude or longitude. MOD11A2 day and night windows extend 25 km each way. A 1 km pixel counts as cropland when at least three of its four 500 m pixels are class 12. Each 8-day composite needs valid values in at least 30% of its cropland pixels. We average retained composites starting on days 001 through 113, then give each site equal weight. Temperatures use the same Sen and Mann-Kendall methods as annual rain, in °C per decade. The 2001-2019 refit excludes the period of Terra's orbit drift.` },
     trend: { id: 'trend', verdict: trend.verdict, direction: TREND_DIRECTION[trend.verdict], heading: TREND_HEADING[trend.verdict], text: trend.text },
     'trend-where': trendWhere,
     'trend-where-other': trendWhereOther,
@@ -272,7 +315,7 @@ export function buildClaims(a: Artifact): Claims {
     'method-totals': { id: 'method-totals', verdict: 'fixed', direction: 'none',
       text: 'NASA POWER serves IMERG as daily totals in UTC days. We add them into months, then sum all twelve for each annual total and months one through four for each January to April total. Both windows stay within the same calendar year.' },
     'method-weights': { id: 'method-weights', verdict: 'fixed', direction: 'none',
-      text: `Regional and national series use the same land-area weights for annual and January to April totals. Each square counts by its land area inside the boundary, times the cosine of its latitude. Border squares count toward every region they touch. We fit the trend and test only to the annual series. The ${regionCount} regions come from geoBoundaries ADM1, which still names the Bangsamoro region ARMM.` },
+      text: `Regional and national series use the same land-area weights for annual and January to April totals. Each square counts by its land area inside the boundary, times the cosine of its latitude. Border squares count toward every region they touch. Rainfall trends use only the annual series. The ${regionCount} regions come from geoBoundaries ADM1, which still names the Bangsamoro region ARMM.` },
     'method-enso': { id: 'method-enso', verdict: 'fixed', direction: 'none',
       text: "A year began in El Niño when NOAA's December-to-February Oceanic Niño Index is +0.5 °C or more. This is this page's start-of-year rule, not NOAA's full episode definition. The map compares January to April totals in those years with the same months in other years. Annual comparisons remain as context. The comparison has no significance test and does not separate El Niño from other causes." },
     'method-limits': { id: 'method-limits', verdict: 'fixed', direction: 'none',
@@ -285,8 +328,8 @@ export function buildClaims(a: Artifact): Claims {
 }
 
 const LEXICON: Record<'up' | 'down', RegExp> = {
-  up: /\b(wetter|rose|rises?|rising|more rain|increas(e|es|ed|ing)|above)\b/i,
-  down: /\b(drier|fell|falls?|falling|less rain|decreas(e|es|ed|ing)|below)\b/i,
+  up: /\b(wetter|warmer|warming|hotter|rose|rises?|rising|more rain|increas(e|es|ed|ing)|above)\b/i,
+  down: /\b(drier|cooler|cooling|fell|falls?|falling|less rain|decreas(e|es|ed|ing)|below)\b/i,
 };
 const FORBIDDEN: Record<ClaimDirection, readonly ('up' | 'down')[]> = {
   up: ['down'], down: ['up'], none: ['up', 'down'], mixed: [],

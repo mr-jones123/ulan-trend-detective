@@ -94,6 +94,8 @@ const description = `${claims['standfirst-enso'].text} ${claims['standfirst-tren
           <p data-claim={claims['method-weights'].id} data-verdict={claims['method-weights'].verdict}>{claims['method-weights'].text}</p>
           <p data-claim={claims['method-enso'].id} data-verdict={claims['method-enso'].verdict}>{claims['method-enso'].text}</p>
           <p data-claim={claims['method-limits'].id} data-verdict={claims['method-limits'].verdict}>{claims['method-limits'].text}</p>
+          <p data-claim="method-farm" data-verdict={claims['method-farm'].verdict}>{claims['method-farm'].text}</p>
+          <p data-claim="farm-limit" data-verdict={claims['farm-limit'].verdict}>{claims['farm-limit'].text}</p>
           <details class="why-imerg">
             <summary>Why we use IMERG</summary>
             <p>We first built this map from NASA POWER's MERRA-2 rainfall, and checked it against IMERG at one point near Manila.</p>
@@ -121,6 +123,9 @@ const description = `${claims['standfirst-enso'].text} ${claims['standfirst-tren
             <li><a href="https://power.larc.nasa.gov/docs/methodology/data/sources/">NASA POWER daily API</a></li>
             <li><a href="https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/ensostuff/ONI_v5.php">NOAA CPC Oceanic Niño Index</a></li>
             <li><a href="https://www.geoboundaries.org/">geoBoundaries PHL ADM0 and ADM1</a>, <a href="https://creativecommons.org/licenses/by/3.0/igo/">CC BY 3.0 IGO</a></li>
+            <li><a href="https://doi.org/10.5067/MODIS/MCD12Q1.061">LP DAAC MCD12Q1 land cover</a>, Friedl and Sulla-Menashe (2022)</li>
+            <li><a href="https://doi.org/10.5067/MODIS/MOD11A2.061">LP DAAC MOD11A2 surface temperature</a>, Wan, Hook and Hulley (2021)</li>
+            <li><a href="https://modis.ornl.gov/rst/api/v1/">ORNL DAAC MODIS subset API</a></li>
           </ul>
           <ul>
             <li class="source-kind">Map</li>
@@ -139,6 +144,7 @@ const description = `${claims['standfirst-enso'].text} ${claims['standfirst-tren
           <ul>
             <li class="source-kind">Context</li>
             <li><a href={PAGASA}>PAGASA El Niño Advisory No. 5</a></li>
+            <li><a href="https://doi.org/10.1073/pnas.0403720101">Peng et al. (2004), rice yield and night air temperature at IRRI</a></li>
             <li><a href="https://fonts.google.com/specimen/Imbue">Imbue</a> and <a href="https://fonts.google.com/specimen/Albert+Sans">Albert Sans</a>, SIL Open Font License</li>
           </ul>
         </div>

@@ -21,6 +21,7 @@ function breaksFor(a: Artifact, mode: Mode): readonly number[] {
     case 'mean': return a.legend.mean_mm;
     case 'year': return a.legend.year_pct;
     case 'enso': return a.legend.enso_pct;
+    case 'farm': return a.legend.enso_pct;
     case 'trend': return a.legend.trend_pct;
     default: {
       const unreachable: never = mode;
@@ -39,6 +40,7 @@ const TITLES: Record<Mode, (year: number) => string> = {
   mean: () => 'Average year, 2001-2025, mm',
   year: (year) => `${year} against each square's 2001-2025 average, %`,
   enso: () => 'January to April, El Niño-start years against other years, %',
+  farm: () => 'Cropland January to April rain, El Niño gap, %. Outlines are temperature sites.',
   trend: () => 'Change per decade, % of the average year',
 };
 
@@ -64,6 +66,7 @@ const PROPERTY: Record<Mode, ExpressionSpecification> = {
   mean: ['get', 'mean'],
   year: ['coalesce', ['feature-state', 'a'], 0],
   enso: ['get', 'enso'],
+  farm: ['get', 'enso'],
   trend: ['get', 'trend'],
 };
 
