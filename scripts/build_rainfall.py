@@ -27,9 +27,10 @@ from shapely.ops import unary_union
 from shapely.prepared import prep
 
 if __package__:
-    from . import imerg
+    from . import imerg, modis
 else:
     import imerg
+    import modis
 
 ROOT = imerg.ROOT
 SOURCES = imerg.SOURCES
@@ -116,7 +117,7 @@ def download(url):
         raise ValueError(f"Download failed for {url}: {error}") from error
 
 
-def acquire(refresh):
+def acquire(refresh, offline=False):
     manifest = json.loads(MANIFEST.read_bytes()) if MANIFEST.exists() else {}
     raws, records = {}, {}
     for snapshot in SNAPSHOTS:
@@ -129,6 +130,8 @@ def acquire(refresh):
             if sha256(raw) != record["sha256"] or len(raw) != record["bytes"]:
                 raise ValueError(f"Snapshot {snapshot.file} differs from its manifest hash")
         else:
+            if offline:
+                raise ValueError(f"Missing offline snapshot {snapshot.file}")
             raw = download(snapshot.url)
             record = {"url": snapshot.url, "file": snapshot.file, "sha256": sha256(raw), "bytes": len(raw),
                       "retrieved_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
@@ -426,6 +429,50 @@ def strip_raw(record):
     return {key: value for key, value in record.items() if not key.startswith("_")}
 
 
+def temperature_record(values, flags):
+    slope, mid, _, p = trend(values)
+    refit = values[:19]
+    refit_slope = sen_slope(refit)
+    _, refit_p = mann_kendall(refit)
+    gap = (statistics.mean(v for v, flag in zip(values, flags, strict=True) if flag)
+           - statistics.mean(v for v, flag in zip(values, flags, strict=True) if not flag))
+    return {"c": [rnd(v, 4) for v in values], "mean_c": rnd(statistics.mean(values), 4),
+            "sen_c_decade": rnd(10 * slope, 4), "sen_mid_c": rnd(mid, 4),
+            "p": serial_p(p), "direction": direction(slope), "meets_threshold": p < ALPHA,
+            "enso_diff_c": rnd(gap, 4), "enso_direction": direction(gap),
+            "refit": {"start": 2001, "end": 2019, "sen_c_decade": rnd(10 * refit_slope, 4),
+                      "p": serial_p(refit_p), "direction": direction(refit_slope),
+                      "meets_threshold": refit_p < ALPHA}}
+
+
+def farm_record(snapshot, flags, rain):
+    sites, raw_series = [], {"day": [], "night": []}
+    for site in snapshot["sites"]:
+        record = {key: site[key] for key in ("lat", "lon", "cropland_pixels", "outline")}
+        for period in ("day", "night"):
+            composites = site["composites"][period]
+            values = []
+            for year in YEARS:
+                dates = [f"A{year}{day:03}" for day in range(1, 114, 8)]
+                if any(date not in composites for date in dates):
+                    raise ValueError("Missing farm composite")
+                valid = [composites[date] for date in dates if composites[date] is not None]
+                if not valid or any(not math.isfinite(v) for v in valid):
+                    raise ValueError("Invalid farm temperature year")
+                values.append(statistics.mean(valid))
+            raw_series[period].append(values)
+            record[period] = temperature_record(values, flags)
+        sites.append(record)
+    mean = statistics.mean(rain)
+    return {"mask_year": 2020, "map_threshold_pct": 10, "sites": sites,
+            "rain": {"mm": [rnd(v, 1) for v in rain], "mean_mm": rnd(mean, 1),
+                     "enso": comparison_record(enso_comparison(rain, flags, mean))},
+            "night_rising_meets": sum(s["night"]["direction"] == "up" and s["night"]["meets_threshold"] for s in sites),
+            **{period: temperature_record([statistics.mean(site[k] for site in raw_series[period])
+                                           for k in range(len(YEARS))], flags)
+               for period in ("day", "night")}}
+
+
 def build_artifact(raws, records, annual, jan_apr, cube_record):
     adm0 = unary_union([geometry for _, geometry in parse_polygons(raws["adm0"], "ADM0")])
     if set(annual) != imerg.land_pixels(adm0):
@@ -436,6 +483,12 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
     audit = source_audit(raws["audit_merra2"], raws["audit_imerg"])
 
     indices = sorted(annual)
+    farm_snapshot, farm_source = modis.load_snapshot()
+    if set(farm_snapshot["cells"]) != {f"{row}-{col}" for row, col in indices}:
+        raise ValueError("Cropland snapshot must cover every IMERG square")
+    cropland_pct = [farm_snapshot["cells"][f"{row}-{col}"] for row, col in indices]
+    if any(type(v) is not int or not 0 <= v <= 100 for v in cropland_pct):
+        raise ValueError("Cropland shares must be integer percentages")
     prepared = [(prep(region["land"]), region["land"]) for region in regions]
     land_weight, land_pct, dominant = [], [], []
     members = [[] for _ in regions]
@@ -460,6 +513,8 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
     national_members = list(enumerate(land_weight))
     national = series_record(weighted_mean_series(national_members, by_position),
                              weighted_mean_series(national_members, jan_apr_by_position), flags)
+    farm = farm_record(farm_snapshot, flags, weighted_mean_series(
+        [(i, weight * cropland_pct[i] / 100) for i, weight in national_members], jan_apr_by_position))
 
     cell_stats = []
     for index in indices:
@@ -549,6 +604,7 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
         "count": len(indices),
         "row": [row for row, _ in indices], "col": [col for _, col in indices],
         "region": dominant, "land_pct": land_pct,
+        "cropland_pct": cropland_pct,
         "weight": [significant(w / (STEP * STEP)) for w in land_weight],
         "mean_mm": [round(c["mean"]) for c in cell_stats],
         "annual_mm": [round(v) for index in indices for v in annual[index]],
@@ -569,7 +625,7 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
                   for name in ("adm0", "adm1")}
     api_versions = sorted({entry["version"] for entry in cube_record["api"]})
     return {
-        "schema": "ph-rain-imerg-v2",
+        "schema": "ph-rain-imerg-v3",
         "period": {"start": YEARS[0], "end": YEARS[-1], "years": list(YEARS)},
         "alpha": ALPHA,
         "source": {"provider": "NASA POWER", "dataset": "GPM IMERG Final Run", "parameter": "IMERG_PRECTOT",
@@ -584,10 +640,11 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
                  "source": {**records["oni"], "provider": "NOAA Climate Prediction Center"}},
         "legend": legend,
         "national": strip_raw(national),
+        "farm": farm,
         "regions": [strip_raw(record) for record in region_records],
         "cells": cells,
         "facts": facts,
-        "provenance": {"imerg": cube_record, "snapshots": records, "source_audit": audit},
+        "provenance": {"imerg": cube_record, "modis": farm_source, "snapshots": records, "source_audit": audit},
     }
 
 
@@ -602,15 +659,21 @@ def publish(raws, records, cube_record, artifact):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--refresh", action="store_true",
-                        help="Download every small snapshot again and rebuild the IMERG cube")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--refresh", action="store_true",
+                      help="Refresh small snapshots and rebuild IMERG and MODIS from verified caches")
+    mode.add_argument("--offline", action="store_true", help="Require pinned snapshots; never use the network")
     args = parser.parse_args()
     try:
-        raws, records = acquire(args.refresh)
+        raws, records = acquire(args.refresh, args.offline)
         if args.refresh:
             adm0 = unary_union([geometry for _, geometry in parse_polygons(raws["adm0"], "ADM0")])
             imerg.build_cube(imerg.tile_plan(adm0), imerg.land_pixels(adm0))
         annual, jan_apr, cube_record = load_cube()
+        if args.refresh or not modis.SNAPSHOT.exists():
+            if args.offline:
+                raise ValueError("Missing offline MODIS snapshot")
+            modis.build_snapshot(imerg.load_boundary())
         artifact = build_artifact(raws, records, annual, jan_apr, cube_record)
         content = publish(raws, records, cube_record, artifact)
     except (OSError, ValueError, KeyError, TypeError) as error:
@@ -622,6 +685,7 @@ def main():
         "gzip_bytes": len(gzip.compress(content, mtime=0)), "cells": artifact["cells"]["count"],
         "national": {key: national[key] for key in ("mean_mm", "sen_mm_decade", "sen_pct_decade", "p",
                                                      "direction", "meets_threshold", "enso", "jan_apr")},
+        "farm": {key: artifact["farm"][key] for key in ("rain", "day", "night", "night_rising_meets")},
         "facts": artifact["facts"], "legend": artifact["legend"],
     }, indent=2, ensure_ascii=False))
     return 0

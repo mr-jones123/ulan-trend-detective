@@ -2,11 +2,11 @@ import json
 import math
 import unittest
 
-from scripts import imerg
+from scripts import imerg, modis
 from scripts.build_rainfall import (
     ALPHA, PANTABANGAN, YEARS, began_el_nino, cell_containing, cube_series, diverging_breaks, enso_comparison,
     mann_kendall, parse_oni, power_point, sen_intercept, sen_slope, serial_p, tied, trend_classes,
-    series_record, weighted_mean_series,
+    series_record, temperature_record, weighted_mean_series,
 )
 
 POINT_SERIES = [2611, 2549, 1870, 2175, 2726, 2282, 2390, 3069, 3287, 2196, 3329, 3467, 3029, 2426, 2101,
@@ -145,6 +145,55 @@ class AggregationTests(unittest.TestCase):
     def test_ties_name_every_extreme_region(self):
         regions = [{"id": "a", "v": 2}, {"id": "b", "v": 5}, {"id": "c", "v": 5}]
         self.assertEqual(tied(regions, lambda r: r["v"], max), ["b", "c"])
+
+
+class ModisTests(unittest.TestCase):
+    def test_sinusoidal_window_rows_run_north_to_south(self):
+        window = {"cellsize": modis.CELL, "xllcorner": 100 * modis.CELL,
+                  "yllcorner": 200 * modis.CELL, "nrows": 4, "ncols": 4}
+        self.assertEqual(modis.pixel_index(window, 0, 0), (100, 203))
+        self.assertEqual(modis.pixel_index(window, 3, 3), (103, 200))
+        lon, lat = modis.pixel_lonlat(100, 200)
+        self.assertAlmostEqual(math.radians(lat) * modis.RADIUS, 200.5 * modis.CELL)
+        self.assertAlmostEqual(math.radians(lon) * modis.RADIUS * math.cos(math.radians(lat)),
+                               100.5 * modis.CELL)
+        self.assertGreater(modis.pixel_lonlat(100, 203)[1], lat)
+
+    def test_one_kilometre_pixel_maps_to_four_half_kilometre_pixels(self):
+        window = {"cellsize": modis.CELL * 2, "xllcorner": 100 * modis.CELL,
+                  "yllcorner": 200 * modis.CELL, "nrows": 2, "ncols": 2}
+        ix, iy = modis.pixel_index(window, 0, 0)
+        self.assertEqual((ix, iy), (50, 101))
+        children = {(100, 202), (101, 202), (100, 203), (101, 203)}
+        self.assertTrue(modis.cropland_pixel(ix, iy, children))
+        children.remove((100, 202))
+        self.assertTrue(modis.cropland_pixel(ix, iy, children))
+        children.remove((101, 202))
+        self.assertFalse(modis.cropland_pixel(ix, iy, children))
+        self.assertFalse(modis.cropland_pixel(ix + 1, iy, children))
+
+    def test_composite_threshold_includes_exactly_thirty_percent(self):
+        positions = list(range(10))
+        self.assertIsNone(modis.composite_mean([15000, 15000] + [0] * 8, positions))
+        self.assertAlmostEqual(modis.composite_mean([15000] * 3 + [0] * 7, positions), 26.85)
+        self.assertIsNone(modis.composite_mean([15000], []))
+        self.assertAlmostEqual(modis.composite_mean([10000, 15000, 16000], [1, 2]), 36.85)
+
+    def test_sites_follow_density_and_separation_in_either_axis(self):
+        density = {(10, 120): 100, (10.5, 120.5): 90, (11, 120): 80,
+                   (10, 121): 70, (11.5, 120.5): 60, (12, 122): 50}
+        self.assertEqual(modis.select_sites(density, 4), [(10, 120), (11, 120), (10, 121), (12, 122)])
+        with self.assertRaises(ValueError):
+            modis.select_sites(density, 5)
+
+    def test_temperature_statistics_use_celsius_and_refit_original_years(self):
+        values = [20 + i * 0.1 for i in range(25)]
+        record = temperature_record(values, [i % 2 == 0 for i in range(25)])
+        self.assertEqual(record["sen_c_decade"], 1)
+        self.assertEqual(record["direction"], "up")
+        self.assertTrue(record["meets_threshold"])
+        self.assertEqual(record["refit"]["sen_c_decade"], 1)
+        self.assertEqual(record["enso_diff_c"], 0)
 
 
 if __name__ == "__main__":

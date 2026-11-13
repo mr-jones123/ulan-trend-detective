@@ -67,8 +67,18 @@ const diverging = z.array(z.number()).length(9)
 const sign = z.union([z.literal(-1), z.literal(0), z.literal(1)]);
 const ranked = z.array(z.object({ id: regionId, share }));
 
+const temperature = z.object({
+  c: yearly, mean_c: z.number(), sen_c_decade: z.number(), sen_mid_c: z.number(),
+  p: z.number().min(0).max(1), direction, meets_threshold: z.boolean(),
+  enso_diff_c: z.number(), enso_direction: direction,
+  refit: z.object({
+    start: z.literal(2001), end: z.literal(2019), sen_c_decade: z.number(),
+    p: z.number().min(0).max(1), direction, meets_threshold: z.boolean(),
+  }),
+});
+
 export const rainfallSchema = z.object({
-  schema: z.literal('ph-rain-imerg-v2'),
+  schema: z.literal('ph-rain-imerg-v3'),
   period: z.object({ start: z.literal(FIRST_YEAR), end: z.literal(2025), years: z.array(z.int()).length(YEAR_COUNT) }),
   alpha: z.literal(0.05),
   source: z.object({
@@ -92,6 +102,16 @@ export const rainfallSchema = z.object({
     mean_mm: z.array(z.number()).min(3).max(8), trend_pct: diverging, enso_pct: diverging, year_pct: diverging,
   }),
   national: series,
+  farm: z.object({
+    mask_year: z.literal(2020), map_threshold_pct: z.literal(10),
+    rain: z.object({ mm: yearly, mean_mm: z.number().positive(), enso: ensoComparison }),
+    day: temperature, night: temperature, night_rising_meets: z.int().min(0).max(12),
+    sites: z.array(z.object({
+      lat: z.number(), lon: z.number(), cropland_pixels: z.int().positive(),
+      outline: z.array(z.tuple([z.number(), z.number()])).length(5),
+      day: temperature, night: temperature,
+    })).length(12),
+  }),
   regions: z.array(region).length(17),
   cells: z.object({
     count: z.int().positive(),
@@ -99,6 +119,7 @@ export const rainfallSchema = z.object({
     col: z.array(z.int().min(0).max(3599)),
     region: z.array(z.int().min(-1).max(16)),
     land_pct: z.array(z.int().min(0).max(100)),
+    cropland_pct: z.array(z.int().min(0).max(100)),
     weight: z.array(z.number().nonnegative()),
     mean_mm: z.array(z.int().positive()),
     annual_mm: z.array(z.int().nonnegative()),
@@ -136,6 +157,8 @@ export const rainfallSchema = z.object({
   }),
   provenance: z.object({
     imerg: z.object({ file: z.string(), sha256, bytes: z.int().positive(), manifest: z.string(), manifest_sha256: sha256 }).loose(),
+    modis: z.object({ file: z.string(), sha256, bytes: z.int().positive(), manifest_sha256: sha256,
+      requests: z.int().positive(), boundary_sha256: sha256 }),
     snapshots: z.record(z.string(), snapshot),
     source_audit: z.object({
       point: z.tuple([z.number(), z.number()]),
@@ -150,7 +173,7 @@ export const rainfallSchema = z.object({
   const { cells } = data;
   const perCell = [cells.row, cells.col, cells.region, cells.land_pct, cells.weight, cells.mean_mm, cells.sen_mm_decade,
     cells.sen_pct_decade, cells.sen_mid_mm, cells.p, cells.trend_sign, cells.meets,
-    cells.jan_apr_mean_mm, cells.jan_apr_enso_diff_pct, cells.jan_apr_enso_sign];
+    cells.jan_apr_mean_mm, cells.jan_apr_enso_diff_pct, cells.jan_apr_enso_sign, cells.cropland_pct];
   if (perCell.some((column) => column.length !== cells.count)
     || [cells.annual_mm, cells.jan_apr_mm].some((column) => column.length !== cells.count * YEAR_COUNT)) {
     context.addIssue({ code: 'custom', path: ['cells'], message: 'Cell columns must match the cell count' });
