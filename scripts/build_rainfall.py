@@ -45,7 +45,7 @@ ENSO_THRESHOLD = 0.5
 REGION_COUNT = 17
 AUDIT_POINT = (121.25, 14.5)
 PANTABANGAN = (121.14, 15.85)
-DIVERGING_EXTENTS = (2, 4, 5, 8, 10, 15, 20, 30, 40, 50, 60, 80)
+DIVERGING_EXTENTS = (2, 4, 5, 8, 10, 15, 20, 30, 40, 50, 60, 80, 100)
 MEAN_CLASSES = 7
 MEAN_STEP = 500
 P_DIGITS = 6
@@ -147,11 +147,20 @@ def load_cube():
     if sha256(compressed) != manifest["cube"]["sha256"] or len(compressed) != manifest["cube"]["bytes"]:
         raise ValueError("IMERG cube differs from imerg-manifest.json")
     cube = json.loads(gzip.decompress(compressed))
+    annual, jan_apr = cube_series(cube)
+    record = {"file": cube_path.name, "sha256": manifest["cube"]["sha256"], "bytes": manifest["cube"]["bytes"],
+              "manifest": IMERG_MANIFEST.name, "manifest_sha256": sha256(manifest_raw),
+              "tiles": manifest["counts"]["tiles"], "requests": manifest["counts"]["requests"],
+              "api": manifest["api"]}
+    return annual, jan_apr, record
+
+
+def cube_series(cube):
     expected_grid = {"latitude_origin": imerg.LAT_ORIGIN, "longitude_origin": imerg.LON_ORIGIN,
                      "latitude_step": STEP, "longitude_step": STEP}
     if cube["grid"] != expected_grid or cube["months"] != list(imerg.MONTHS):
         raise ValueError("IMERG cube grid or month axis is unexpected")
-    annual = {}
+    annual, jan_apr = {}, {}
     for pixel in cube["pixels"]:
         row, col, monthly = pixel["row"], pixel["col"], pixel["monthly_mm"]
         if pixel["id"] != f"{row}-{col}" or len(monthly) != len(imerg.MONTHS):
@@ -162,11 +171,8 @@ def load_cube():
         if (row, col) in annual:
             raise ValueError(f"Duplicate cube pixel {pixel['id']}")
         annual[(row, col)] = [math.fsum(monthly[k * 12:k * 12 + 12]) for k in range(len(YEARS))]
-    record = {"file": cube_path.name, "sha256": manifest["cube"]["sha256"], "bytes": manifest["cube"]["bytes"],
-              "manifest": IMERG_MANIFEST.name, "manifest_sha256": sha256(manifest_raw),
-              "tiles": manifest["counts"]["tiles"], "requests": manifest["counts"]["requests"],
-              "api": manifest["api"]}
-    return annual, record
+        jan_apr[(row, col)] = [math.fsum(monthly[k * 12:k * 12 + 4]) for k in range(len(YEARS))]
+    return annual, jan_apr
 
 
 def parse_polygons(raw, label):
@@ -308,10 +314,19 @@ def enso_comparison(values, flags, mean):
             "below_mean": sum(v < mean for v in enso), "group_size": len(enso), "other_size": len(other)}
 
 
-def series_record(values, flags):
+def comparison_record(enso):
+    return {"mean_mm": rnd(enso["mean_mm"], 1), "other_mean_mm": rnd(enso["other_mean_mm"], 1),
+            "diff_pct": rnd(enso["diff_pct"], 3), "direction": direction(enso["diff_pct"]),
+            "below_mean": enso["below_mean"], "group_size": enso["group_size"],
+            "other_size": enso["other_size"]}
+
+
+def series_record(values, jan_apr, flags):
     mean = math.fsum(values) / len(values)
     slope, mid, s, p = trend(values)
     enso = enso_comparison(values, flags, mean)
+    jan_apr_mean = math.fsum(jan_apr) / len(jan_apr)
+    jan_apr_enso = enso_comparison(jan_apr, flags, jan_apr_mean)
     wettest = max(range(len(values)), key=lambda k: (values[k], -k))
     driest = min(range(len(values)), key=lambda k: (values[k], k))
     return {
@@ -321,16 +336,16 @@ def series_record(values, flags):
         "sen_mm_decade": rnd(10 * slope, 2), "sen_pct_decade": rnd(1000 * slope / mean, 3),
         "sen_mid_mm": rnd(mid, 1), "mk_s": s, "p": serial_p(p),
         "direction": direction(slope), "meets_threshold": p < ALPHA,
-        "enso": {"mean_mm": rnd(enso["mean_mm"], 1), "other_mean_mm": rnd(enso["other_mean_mm"], 1),
-                 "diff_pct": rnd(enso["diff_pct"], 3), "direction": direction(enso["diff_pct"]),
-                 "below_mean": enso["below_mean"], "group_size": enso["group_size"],
-                 "other_size": enso["other_size"]},
+        "enso": comparison_record(enso),
+        "jan_apr": {"mm": [rnd(v, 1) for v in jan_apr], "mean_mm": rnd(jan_apr_mean, 1),
+                    "anomaly_pct": [rnd(100 * (v - jan_apr_mean) / jan_apr_mean, 2) for v in jan_apr],
+                    "enso": comparison_record(jan_apr_enso)},
         "wettest": {"year": YEARS[wettest], "mm": rnd(values[wettest], 1),
                     "anomaly_pct": rnd(100 * (values[wettest] - mean) / mean, 2)},
         "driest": {"year": YEARS[driest], "mm": rnd(values[driest], 1),
                    "anomaly_pct": rnd(100 * (values[driest] - mean) / mean, 2)},
         "_raw": {"mean": mean, "slope": slope, "pct": 1000 * slope / mean, "p": p,
-                 "enso_diff": enso["diff_pct"], "wettest": values[wettest], "driest": values[driest]},
+                 "jan_apr_enso_diff": jan_apr_enso["diff_pct"], "wettest": values[wettest], "driest": values[driest]},
     }
 
 
@@ -411,7 +426,7 @@ def strip_raw(record):
     return {key: value for key, value in record.items() if not key.startswith("_")}
 
 
-def build_artifact(raws, records, annual, cube_record):
+def build_artifact(raws, records, annual, jan_apr, cube_record):
     adm0 = unary_union([geometry for _, geometry in parse_polygons(raws["adm0"], "ADM0")])
     if set(annual) != imerg.land_pixels(adm0):
         raise ValueError("IMERG cube pixels differ from the ADM0 land-intersecting pixels")
@@ -441,21 +456,26 @@ def build_artifact(raws, records, annual, cube_record):
         raise ValueError("Every ADM1 region must intersect at least one pixel")
 
     by_position = {position: annual[index] for position, index in enumerate(indices)}
-    national = series_record(weighted_mean_series(list(enumerate(land_weight)), by_position), flags)
+    jan_apr_by_position = {position: jan_apr[index] for position, index in enumerate(indices)}
+    national_members = list(enumerate(land_weight))
+    national = series_record(weighted_mean_series(national_members, by_position),
+                             weighted_mean_series(national_members, jan_apr_by_position), flags)
 
     cell_stats = []
     for index in indices:
         values = annual[index]
         mean = math.fsum(values) / len(values)
         slope, mid, s, p = trend(values)
-        enso = enso_comparison(values, flags, mean)
-        cell_stats.append({"mean": mean, "slope": slope, "mid": mid, "p": p, "enso": enso["diff_pct"],
+        jan_apr_mean = math.fsum(jan_apr[index]) / len(YEARS)
+        enso = enso_comparison(jan_apr[index], flags, jan_apr_mean)
+        cell_stats.append({"mean": mean, "jan_apr_mean": jan_apr_mean, "slope": slope, "mid": mid, "p": p, "enso": enso["diff_pct"],
                            "classes": trend_classes(slope, p)})
 
     national_shares = shares([c["classes"] for c in cell_stats], land_weight)
     region_records = []
     for region, member in zip(regions, members, strict=True):
-        record = series_record(weighted_mean_series(member, by_position), flags)
+        record = series_record(weighted_mean_series(member, by_position),
+                               weighted_mean_series(member, jan_apr_by_position), flags)
         member_shares = shares([cell_stats[position]["classes"] for position, _ in member],
                                [weight for _, weight in member])
         region_records.append({"id": region["id"], "name": region["name"], "iso": region["iso"],
@@ -479,13 +499,17 @@ def build_artifact(raws, records, annual, cube_record):
     pantabangan_mean = math.fsum(pantabangan_values) / len(pantabangan_values)
     pantabangan_2024 = pantabangan_values[YEARS.index(2024)]
     pantabangan_enso = enso_comparison(pantabangan_values, flags, pantabangan_mean)["diff_pct"]
+    pantabangan_jan_apr = jan_apr[pantabangan]
+    pantabangan_jan_apr_mean = math.fsum(pantabangan_jan_apr) / len(YEARS)
+    pantabangan_jan_apr_2024 = pantabangan_jan_apr[YEARS.index(2024)]
+    pantabangan_jan_apr_enso = enso_comparison(pantabangan_jan_apr, flags, pantabangan_jan_apr_mean)["diff_pct"]
     raw_national = national["_raw"]
     swing_range = raw_national["wettest"] - raw_national["driest"]
     trend_change = abs(raw_national["slope"]) * (YEARS[-1] - YEARS[0])
     facts = {
         "shares": strip_raw(national_shares),
         "enso_less_area_share": rnd(enso_less_share, 5),
-        "regions_enso_less": sum(r["_raw"]["enso_diff"] < 0 for r in region_records),
+        "regions_enso_less": sum(r["_raw"]["jan_apr_enso_diff"] < 0 for r in region_records),
         "regions_meeting": [r["id"] for r in region_records if r["meets_threshold"]],
         "meeting_regions": {"up": top_meeting("meets_up"), "down": top_meeting("meets_down")},
         "swing": {"range_mm": rnd(swing_range, 1), "trend_change_mm": rnd(trend_change, 1),
@@ -495,11 +519,17 @@ def build_artifact(raws, records, annual, cube_record):
             "anomaly_2024_pct": rnd(100 * (pantabangan_2024 - pantabangan_mean) / pantabangan_mean, 2),
             "direction_2024": direction(pantabangan_2024 - pantabangan_mean),
             "enso_diff_pct": rnd(pantabangan_enso, 3), "enso_direction": direction(pantabangan_enso),
+            "jan_apr_mean_mm": rnd(pantabangan_jan_apr_mean, 1),
+            "jan_apr_mm_2024": rnd(pantabangan_jan_apr_2024, 1),
+            "jan_apr_anomaly_2024_pct": rnd(100 * (pantabangan_jan_apr_2024 / pantabangan_jan_apr_mean - 1), 2),
+            "jan_apr_direction_2024": direction(pantabangan_jan_apr_2024 - pantabangan_jan_apr_mean),
+            "jan_apr_enso_diff_pct": rnd(pantabangan_jan_apr_enso, 3),
+            "jan_apr_enso_direction": direction(pantabangan_jan_apr_enso),
         },
         "focus": {
             "wettest_mean_region": tied(region_records, lambda r: r["_raw"]["mean"], max),
             "driest_mean_region": tied(region_records, lambda r: r["_raw"]["mean"], min),
-            "enso_region": tied(region_records, lambda r: r["_raw"]["enso_diff"], min),
+            "enso_region": tied(region_records, lambda r: r["_raw"]["jan_apr_enso_diff"], min),
             "trend_region": tied(region_records, lambda r: abs(r["_raw"]["pct"]), max),
             "pantabangan_cell": f"{pantabangan[0]}-{pantabangan[1]}",
         },
@@ -522,14 +552,16 @@ def build_artifact(raws, records, annual, cube_record):
         "weight": [significant(w / (STEP * STEP)) for w in land_weight],
         "mean_mm": [round(c["mean"]) for c in cell_stats],
         "annual_mm": [round(v) for index in indices for v in annual[index]],
+        "jan_apr_mm": [round(v) for index in indices for v in jan_apr[index]],
+        "jan_apr_mean_mm": [round(c["jan_apr_mean"]) for c in cell_stats],
         "sen_mm_decade": [rnd(10 * c["slope"], 1) for c in cell_stats],
         "sen_pct_decade": [rnd(1000 * c["slope"] / c["mean"], 1) for c in cell_stats],
         "sen_mid_mm": [round(c["mid"]) for c in cell_stats],
         "p": [rnd(c["p"], 4) for c in cell_stats],
         "trend_sign": [(c["slope"] > 0) - (c["slope"] < 0) for c in cell_stats],
         "meets": [int(c["p"] < ALPHA) for c in cell_stats],
-        "enso_diff_pct": [rnd(c["enso"], 1) for c in cell_stats],
-        "enso_sign": [(c["enso"] > 0) - (c["enso"] < 0) for c in cell_stats],
+        "jan_apr_enso_diff_pct": [rnd(c["enso"], 1) for c in cell_stats],
+        "jan_apr_enso_sign": [(c["enso"] > 0) - (c["enso"] < 0) for c in cell_stats],
     }
 
     boundaries = {name: {**records[name], **BOUNDARY_META[name],
@@ -537,7 +569,7 @@ def build_artifact(raws, records, annual, cube_record):
                   for name in ("adm0", "adm1")}
     api_versions = sorted({entry["version"] for entry in cube_record["api"]})
     return {
-        "schema": "ph-rain-imerg-v1",
+        "schema": "ph-rain-imerg-v2",
         "period": {"start": YEARS[0], "end": YEARS[-1], "years": list(YEARS)},
         "alpha": ALPHA,
         "source": {"provider": "NASA POWER", "dataset": "GPM IMERG Final Run", "parameter": "IMERG_PRECTOT",
@@ -578,8 +610,8 @@ def main():
         if args.refresh:
             adm0 = unary_union([geometry for _, geometry in parse_polygons(raws["adm0"], "ADM0")])
             imerg.build_cube(imerg.tile_plan(adm0), imerg.land_pixels(adm0))
-        annual, cube_record = load_cube()
-        artifact = build_artifact(raws, records, annual, cube_record)
+        annual, jan_apr, cube_record = load_cube()
+        artifact = build_artifact(raws, records, annual, jan_apr, cube_record)
         content = publish(raws, records, cube_record, artifact)
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"Rainfall build failed: {error}", file=sys.stderr)
@@ -589,7 +621,7 @@ def main():
         "artifact": str(OUTPUT.relative_to(ROOT)), "bytes": len(content),
         "gzip_bytes": len(gzip.compress(content, mtime=0)), "cells": artifact["cells"]["count"],
         "national": {key: national[key] for key in ("mean_mm", "sen_mm_decade", "sen_pct_decade", "p",
-                                                     "direction", "meets_threshold", "enso")},
+                                                     "direction", "meets_threshold", "enso", "jan_apr")},
         "facts": artifact["facts"], "legend": artifact["legend"],
     }, indent=2, ensure_ascii=False))
     return 0

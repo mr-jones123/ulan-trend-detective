@@ -4,9 +4,9 @@ import unittest
 
 from scripts import imerg
 from scripts.build_rainfall import (
-    ALPHA, PANTABANGAN, YEARS, began_el_nino, cell_containing, diverging_breaks, enso_comparison,
+    ALPHA, PANTABANGAN, YEARS, began_el_nino, cell_containing, cube_series, diverging_breaks, enso_comparison,
     mann_kendall, parse_oni, power_point, sen_intercept, sen_slope, serial_p, tied, trend_classes,
-    weighted_mean_series,
+    series_record, weighted_mean_series,
 )
 
 POINT_SERIES = [2611, 2549, 1870, 2175, 2726, 2282, 2390, 3069, 3287, 2196, 3329, 3467, 3029, 2426, 2101,
@@ -70,6 +70,46 @@ class DailyInputTests(unittest.TestCase):
 
 
 class AggregationTests(unittest.TestCase):
+    def synthetic_cube(self):
+        return {
+            "grid": {"latitude_origin": imerg.LAT_ORIGIN, "longitude_origin": imerg.LON_ORIGIN,
+                     "latitude_step": imerg.GRID_STEP, "longitude_step": imerg.GRID_STEP},
+            "months": list(imerg.MONTHS),
+            "pixels": [
+                {"id": "1058-3011", "row": 1058, "col": 3011,
+                 "monthly_mm": [100 * year + month for year in range(len(YEARS)) for month in range(1, 13)]},
+                {"id": "1058-3012", "row": 1058, "col": 3012,
+                 "monthly_mm": [10.0] * len(imerg.MONTHS)},
+            ],
+        }
+
+    def test_january_to_april_sums_same_calendar_year_only(self):
+        annual, jan_apr = cube_series(self.synthetic_cube())
+        self.assertEqual(jan_apr[(1058, 3011)], [400 * year + 10 for year in range(len(YEARS))])
+        self.assertEqual(annual[(1058, 3011)], [1200 * year + 78 for year in range(len(YEARS))])
+        self.assertEqual(jan_apr[(1058, 3012)], [40.0] * len(YEARS))
+        weighted = weighted_mean_series([((1058, 3011), 3.0), ((1058, 3012), 1.0)], jan_apr)
+        self.assertEqual(weighted, [300 * year + 17.5 for year in range(len(YEARS))])
+
+    def test_january_to_april_comparison_is_not_annual_comparison(self):
+        cube = self.synthetic_cube()
+        flags = [year % 2 == 0 for year in range(len(YEARS))]
+        cube["pixels"][0]["monthly_mm"] = [
+            value for flag in flags for value in ([10.0] * 4 + [200.0] * 8 if flag else [25.0] * 4 + [100.0] * 8)
+        ]
+        annual, jan_apr = cube_series(cube)
+        record = series_record(annual[(1058, 3011)], jan_apr[(1058, 3011)], flags)
+        comparison = record["jan_apr"]["enso"]
+        self.assertEqual(comparison["mean_mm"], 40)
+        self.assertEqual(comparison["other_mean_mm"], 100)
+        self.assertEqual(comparison["diff_pct"], -60)
+        self.assertEqual(comparison["direction"], "down")
+        self.assertEqual(comparison["below_mean"], sum(flags))
+        self.assertEqual(comparison["other_size"], len(flags) - sum(flags))
+        self.assertEqual(record["enso"]["direction"], "up")
+        self.assertAlmostEqual(record["jan_apr"]["mean_mm"], 68.8)
+        self.assertEqual(record["jan_apr"]["anomaly_pct"][0], -41.86)
+
     def test_weighted_mean_uses_area_weights(self):
         annual = {0: [1000.0] * len(YEARS), 1: [4000.0] * len(YEARS)}
         series = weighted_mean_series([(0, 3.0), (1, 1.0)], annual)
