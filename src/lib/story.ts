@@ -235,8 +235,11 @@ export function buildClaims(a: Artifact): Claims {
       : { id: 'swing', verdict: 'trend', direction: 'none', heading: 'The trend outgrew the swings',
         text: `Along the fitted trend line, the national total changed by ${fmt.mm(swing.trend_change_mm)} from 2001 to 2025, more than the ${fmt.mm(swing.range_mm)} between the driest and wettest years. Press Play to watch the years.` },
     enso: ensoClaim[enso.direction],
-    'enso-land': { id: 'enso-land', verdict: f.enso_less_area_share >= 0.5 ? 'majority' : 'minority', direction: 'down',
-      text: `${f.enso_less_area_share >= 0.5 ? '' : 'Only '}${fmt.share(f.enso_less_area_share)} of land had less rain from January to April in El Niño-start years than in other years.` },
+    'enso-land': a.cells.jan_apr_enso_sign.every((sign) => sign === -1)
+      ? { id: 'enso-land', verdict: 'all', direction: 'down',
+        text: `Every one of the ${fmt.count(a.cells.count)} squares had less rain from January to April in El Niño-start years than in other years.` }
+      : { id: 'enso-land', verdict: f.enso_less_area_share >= 0.5 ? 'majority' : 'minority', direction: 'down',
+        text: `${f.enso_less_area_share >= 0.5 ? '' : 'Only '}${fmt.share(f.enso_less_area_share)} of land had less rain from January to April in El Niño-start years than in other years.` },
     'enso-region': ensoRegionClaim[ensoLead.jan_apr.enso.direction],
     'pantabangan-enso': gapClaim('pantabangan-enso', pan.jan_apr_enso_direction, {
       down: `In the square over the lake, El Niño-start years averaged ${fmt.pct(pan.jan_apr_enso_diff_pct)} less rain from January to April than other years.`,
@@ -257,7 +260,7 @@ export function buildClaims(a: Artifact): Claims {
       text: `${trendTie}${trendSentences.map((s) => s.text).join(' ')} ${meetingText}` },
     'next-year': { id: 'next-year', verdict: nextYear.direction, direction: nextYear.direction,
       heading: 'PAGASA expects El Niño into 2027',
-      text: `PAGASA's El Niño Advisory No. 5 says the current El Niño may last into the first half of 2027, which includes January to April. ${nextYear.text} This is history, not a forecast for 2027.` },
+      text: `PAGASA's El Niño Advisory No. 5 says the current El Niño may last into the first half of 2027, which includes January to April. ${nextYear.text}` },
     'season-window': { id: 'season-window', verdict: 'fixed', direction: 'none',
       text: "January to April covers much of the country's dry cropping season. It is not a dry season everywhere. Eastern Type II areas, including Eastern Visayas and Caraga, are wet then." },
     'pantabangan-context': { id: 'pantabangan-context', verdict: 'fixed', direction: 'none',
