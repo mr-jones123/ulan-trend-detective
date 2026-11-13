@@ -1,0 +1,268 @@
+---
+import { chartHtml } from '../lib/chart';
+import { legendModel } from '../lib/colour';
+import { placeChart, placeOf } from '../lib/place';
+import { decodeCells, DATA_URL, type Artifact } from '../lib/rainfall';
+import { fmt, TEST_WORDS, type Claim, type Claims } from '../lib/story';
+import { CHAPTER_IDS, CHAPTERS, COUNTRY, MODES, type ChapterId, type Mode } from '../lib/view';
+
+interface Props {
+  artifact: Artifact;
+  claims: Claims;
+}
+
+const { artifact: a, claims } = Astro.props;
+const n = a.national;
+const grid = decodeCells(a);
+const nationalChart = chartHtml(placeChart(a, placeOf(a, grid, COUNTRY), null));
+const legend = legendModel(a, 'mean', a.period.start);
+const cellCount = fmt.count(a.cells.count);
+const regionCount = a.regions.length;
+const swingYear = n.wettest.year;
+
+const HEADINGS: Record<ChapterId, string> = {
+  rain: 'Rain, square by square',
+  driest: claims.driest.heading ?? '',
+  wettest: claims.wettest.heading ?? '',
+  swing: claims.swing.heading ?? '',
+  enso: claims.enso.heading ?? '',
+  'enso-region': claims['enso-region'].heading ?? '',
+  pantabangan: 'Pantabangan, 2023 and 2024',
+  trend: claims.trend.heading ?? '',
+  'trend-where': claims['trend-where'].heading ?? '',
+  'trend-region': claims['trend-region'].heading ?? '',
+  regions: `All ${regionCount} regions`,
+  'next-year': claims['next-year'].heading ?? '',
+};
+const CLAIMS_BY_CHAPTER: Record<ChapterId, readonly Claim[]> = {
+  rain: [claims.rain],
+  driest: [claims.driest],
+  wettest: [claims.wettest],
+  swing: [claims.swing],
+  enso: [claims.enso],
+  'enso-region': [claims['enso-region']],
+  pantabangan: [],
+  trend: [claims.trend],
+  'trend-where': [claims['trend-where'], claims['trend-where-other']],
+  'trend-region': [claims['trend-region']],
+  regions: [],
+  'next-year': [claims['next-year']],
+};
+const MODE_LABELS: Record<Mode, string> = {
+  mean: 'Average rain', year: 'One year', enso: 'El Niño years', trend: '25-year change',
+};
+const chapters = CHAPTER_IDS.map((id, index) => {
+  const next = CHAPTER_IDS[index + 1];
+  return { id, heading: HEADINGS[id], field: CHAPTERS[id].field, claims: CLAIMS_BY_CHAPTER[id], next: next === undefined ? null : { id: next, heading: HEADINGS[next] } };
+});
+const regionsByChange = [...a.regions].sort((x, y) => y.sen_pct_decade - x.sen_pct_decade || x.name.localeCompare(y.name));
+const regionsByName = [...a.regions].sort((x, y) => x.name.localeCompare(y.name));
+const ensoMarks = a.enso.years.map((year) => ((year - a.period.start) / (a.period.end - a.period.start)) * 100);
+const shares = a.facts.shares.area;
+const pValue = fmt.pSameSideOfAlpha(n.p, n.meets_threshold, a.alpha).replace(/^p [=<] /, '');
+const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elninolanina/EN_Advisory_5.pdf';
+---
+<section class="story" id="story" aria-labelledby="story-heading"
+  data-rainfall-app data-state="loading" data-basemap="loading" data-phase="story" data-chapter="rain"
+  data-owner="story" data-mode="mean" data-year={a.period.start} data-focus="country" data-cells="0">
+  <h2 id="story-heading" class="visually-hidden">The story, chapter by chapter</h2>
+  <div class="story-text">
+    <nav class="chapter-nav" aria-label="Chapters">
+      <ol>
+        {chapters.map((chapter) => <li><a href={`#ch-${chapter.id}`} data-goto={chapter.id}>{chapter.heading}</a></li>)}
+        <li><a href="#explore">Find your square</a></li>
+      </ol>
+    </nav>
+
+    {chapters.map((chapter) => (
+      <article class="step" id={`ch-${chapter.id}`} data-chapter={chapter.id} data-field={chapter.field} aria-labelledby={`h-${chapter.id}`}>
+        <div class="step-body">
+          <h3 id={`h-${chapter.id}`} class="step-heading" data-reveal>{chapter.heading}</h3>
+          {chapter.id === 'pantabangan' && (
+            <p data-reveal>In April 2024, during a drought, low water in Pantabangan Lake in Nueva Ecija exposed more of the ruins of the old town of Pantabangan, which went under when the reservoir was built. Drag the line to compare 29 April 2023 with 15 April 2024.</p>
+          )}
+          {chapter.claims.map((claim) => <p data-claim={claim.id} data-verdict={claim.verdict} data-reveal>{claim.text}</p>)}
+
+          {chapter.id === 'rain' && (
+            <figure class="step-figure" data-reveal>
+              <img src="/images/lando-imerg-2015.png" width="720" height="538" loading="lazy"
+                alt="IMERG map of rain totals from 16 to 21 October 2015. The heaviest totals, in pale yellow and teal, cover northern and central Luzon." />
+              <figcaption>The same satellite record mapped Typhoon Lando (Koppu) over Luzon, 16 to 21 October 2015. NASA Earth Observatory map by Joshua Stevens and Jesse Allen, using IMERG data from the GPM Science Team's Precipitation Processing System.</figcaption>
+            </figure>
+          )}
+
+          {chapter.id === 'swing' && (
+            <div class="swing-figure" data-reveal>
+              <div data-place-chart="story" set:html={nationalChart} />
+              <div class="year-control" data-year-control>
+                <label for="year-story">Year</label>
+                <input id="year-story" type="range" min={a.period.start} max={a.period.end} step="1" value={swingYear} data-year-input disabled />
+                <output for="year-story" data-year-output>{swingYear}</output>
+                <button type="button" class="button" aria-pressed="false" data-play disabled>Play</button>
+                <div class="year-marks" aria-hidden="true">{ensoMarks.map((left) => <span style={`left:${left}%`} />)}</div>
+                <p class="year-note">Marked years began in El Niño.</p>
+              </div>
+            </div>
+          )}
+
+          {chapter.id === 'enso' && (
+            <>
+              <div class="numerals" data-reveal>
+                <p><span class="numeral">{fmt.count(Math.round(n.enso.mean_mm))}</span><span class="numeral-caption">mm, average of the {n.enso.group_size} years that began in El Niño</span></p>
+                <p><span class="numeral">{fmt.count(Math.round(n.enso.other_mean_mm))}</span><span class="numeral-caption">mm, average of the other {n.enso.other_size} years</span></p>
+              </div>
+              <p data-claim={claims['enso-land'].id} data-verdict={claims['enso-land'].verdict} data-reveal>{claims['enso-land'].text}</p>
+              <p class="note" data-reveal>These are averages of what happened. They do not show what caused the difference, and they are not a forecast.</p>
+            </>
+          )}
+
+          {chapter.id === 'pantabangan' && (
+            <>
+              <figure class="compare" data-compare data-reveal>
+                <div class="compare-frame">
+                  <img src="/images/pantabangan-2024.jpg" width="720" height="480" loading="lazy"
+                    alt="Pantabangan Lake on 15 April 2024. The water has pulled back from the shore, leaving wide bands of pale exposed ground." />
+                  <img class="compare-top" src="/images/pantabangan-2023.jpg" width="720" height="480" loading="lazy" data-compare-top
+                    alt="Pantabangan Lake on 29 April 2023, with water reaching further into the side valleys." />
+                  <span class="compare-handle" data-compare-handle aria-hidden="true"></span>
+                </div>
+                <label for="compare-range">Compare April 2023 and April 2024</label>
+                <input id="compare-range" type="range" min="0" max="100" value="50" data-compare-range />
+                <figcaption>Left of the line, 29 April 2023. Right of the line, 15 April 2024. NASA Earth Observatory images by Michala Garrison, using Landsat data from the U.S. Geological Survey.</figcaption>
+              </figure>
+              <p data-claim={claims['pantabangan-enso'].id} data-verdict={claims['pantabangan-enso'].verdict} data-reveal>{claims['pantabangan-enso'].text}</p>
+              <p data-claim={claims['pantabangan-2024'].id} data-verdict={claims['pantabangan-2024'].verdict} data-reveal>{claims['pantabangan-2024'].text}</p>
+              <p class="note" data-reveal>An annual rainfall total does not measure reservoir storage or a dry-season deficit. For drought advisories, follow <a href={PAGASA}>PAGASA</a>.</p>
+            </>
+          )}
+
+          {chapter.id === 'trend' && (
+            <dl class="ledger" data-reveal>
+              <div><dt>per decade, as a share of the average year</dt><dd>{fmt.signedPct(n.sen_pct_decade)}</dd></div>
+              <div><dt>p from the Mann-Kendall test. Below 0.05 meets it.</dt><dd>{pValue}</dd></div>
+              <div><dt>of land has a rising fitted slope</dt><dd>{fmt.share(shares.up)}</dd></div>
+              <div><dt>of land meets the test ({fmt.share(shares.meets_up)} rising, {fmt.share(shares.meets_down)} falling)</dt><dd>{fmt.share(shares.meets_up + shares.meets_down)}</dd></div>
+              <div><dt>would meet it by chance if nothing changed and squares were independent. A rough guide.</dt><dd>{Math.round(a.alpha * 100)}%</dd></div>
+            </dl>
+          )}
+
+          {chapter.id === 'regions' && (
+            <div class="table-wrap" data-reveal>
+              <table class="region-table">
+                <caption>Annual rainfall by region, 2001-2025. Change is the fitted Sen slope. The test is Mann-Kendall, p &lt; 0.05, unadjusted.</caption>
+                <thead>
+                  <tr><th scope="col">Region</th><th scope="col" class="col-mean">Average</th><th scope="col">Change per decade</th><th scope="col">Test</th><th scope="col">El Niño-start years against other years</th></tr>
+                </thead>
+                <tbody>
+                  {regionsByChange.map((region) => (
+                    <tr data-region={region.id}>
+                      <th scope="row"><button type="button" data-region-button={region.id}>{region.name}</button></th>
+                      <td class="col-mean">{fmt.mm(region.mean_mm)}</td>
+                      <td>{fmt.signedPct(region.sen_pct_decade)}</td>
+                      <td>{region.meets_threshold ? TEST_WORDS.meets : TEST_WORDS.chance}</td>
+                      <td>{fmt.signedPct(region.enso.diff_pct)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {chapter.id === 'next-year' && (
+            <p class="note" data-reveal>This is history, not a forecast. For advisories, follow PAGASA: <a href={PAGASA}>El Niño Advisory No. 5 (PDF)</a>.</p>
+          )}
+
+          {chapter.next === null
+            ? <a class="next-link" href="#explore" data-reveal>Next: find your square</a>
+            : <a class="next-link" href={`#ch-${chapter.next.id}`} data-goto={chapter.next.id} data-reveal>Next: {chapter.next.heading}</a>}
+        </div>
+      </article>
+    ))}
+
+    <section class="explorer" id="explore" aria-labelledby="explore-heading">
+      <h2 id="explore-heading" class="explorer-heading">Find your square</h2>
+      <p>Tap the map, choose a region, or let your browser find you. Your location stays in your browser.</p>
+      <p class="explorer-alert" data-explorer-alert role="alert" hidden></p>
+      <div class="explore-actions">
+        <button type="button" class="button button-primary" data-find disabled>Find my square</button>
+        <label class="field">
+          <span>Region</span>
+          <select data-region-select disabled>
+            <option value="">Whole country</option>
+            {regionsByName.map((region) => <option value={region.id}>{region.name}</option>)}
+          </select>
+        </label>
+        <button type="button" class="button button-quiet" data-country disabled>Whole country</button>
+      </div>
+      <fieldset class="modes" data-modes disabled>
+        <legend>Show</legend>
+        {MODES.map((mode) => (
+          <label class="mode"><input type="radio" name="mode" value={mode} checked={mode === 'mean'} /><span>{MODE_LABELS[mode]}</span></label>
+        ))}
+      </fieldset>
+      <div class="year-control" data-year-control data-explorer-year hidden>
+        <label for="year-explore">Year</label>
+        <input id="year-explore" type="range" min={a.period.start} max={a.period.end} step="1" value={a.period.start} data-year-input disabled />
+        <output for="year-explore" data-year-output>{a.period.start}</output>
+        <button type="button" class="button" aria-pressed="false" data-play disabled>Play</button>
+        <div class="year-marks" aria-hidden="true">{ensoMarks.map((left) => <span style={`left:${left}%`} />)}</div>
+        <p class="year-note">Marked years began in El Niño.</p>
+      </div>
+      <section class="place" data-place tabindex="0" aria-labelledby="place-heading">
+        <h3 id="place-heading" data-place-heading>Philippines</h3>
+        <dl class="place-facts">
+          <div><dt>Average year</dt><dd data-fact="mean">{fmt.mm(n.mean_mm)}</dd></div>
+          <div><dt>25-year change</dt><dd data-fact="trend">{fmt.signedPct(n.sen_pct_decade)} per decade ({fmt.mm(n.sen_mm_decade)}), {n.meets_threshold ? TEST_WORDS.meets : TEST_WORDS.chance}, {fmt.pSameSideOfAlpha(n.p, n.meets_threshold, a.alpha)}</dd></div>
+          <div><dt>El Niño-start years</dt><dd data-fact="enso">{fmt.signedPct(n.enso.diff_pct)} against other years</dd></div>
+          <div data-fact-row="land" hidden><dt>Land in this square</dt><dd data-fact="land"></dd></div>
+        </dl>
+        <p class="place-help">With this box focused, arrow keys move one square at a time.</p>
+      </section>
+      <div data-place-chart="explore" set:html={nationalChart} />
+      <details class="annual">
+        <summary>All 25 years</summary>
+        <table>
+          <caption data-place-caption>Philippines, annual rainfall in mm</caption>
+          <thead><tr><th scope="col">Year</th><th scope="col">Rain</th><th scope="col">El Niño</th></tr></thead>
+          <tbody data-place-table>
+            {a.period.years.map((year, index) => (
+              <tr><th scope="row">{year}</th><td>{fmt.mm(n.annual_mm[index] ?? 0)}</td><td>{a.enso.began_el_nino[index] ? 'began in El Niño' : ''}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+      <p><a href={DATA_URL} download>Download the data (JSON)</a></p>
+    </section>
+  </div>
+
+  <div class="story-map">
+    <div class="map-block">
+      <div class="map-frame">
+        <div class="map" id="map" role="region" aria-label="Rainfall squares map. Arrow keys pan, plus and minus zoom. Select squares from the explorer panel." aria-describedby="h-rain"></div>
+        <p class="map-message" data-map-message>The interactive map needs JavaScript. Every number on this page comes from the same <a href={DATA_URL}>data file</a>.</p>
+        <button type="button" class="button back-to-story" data-back hidden>Back to the story view</button>
+      </div>
+      <div class="legend" data-legend data-mode="mean" role="group" aria-label={legend.title}>
+        <p class="legend-title" data-legend-title>{legend.title}</p>
+        <ol class="legend-swatches" data-legend-swatches>
+          {legend.classes.map((item) => <li data-swatch><span class="swatch" style={`background:${item.colour}`} /><span>{item.label}</span></li>)}
+        </ol>
+        <p class="legend-ends" data-legend-ends><span>{legend.ends[0]}</span><span>{legend.ends[1]}</span></p>
+        <p class="legend-faded" data-legend-faded hidden><span class="swatch swatch-faded" />Faded squares could be chance (p ≥ 0.05)</p>
+        <p class="map-status" data-status role="status" hidden>Loading {cellCount} rainfall squares…</p>
+        <p class="map-alert" data-alert role="alert" hidden>
+          The rainfall squares could not load. The numbers in the story come from the same data and are still correct.
+          <button type="button" class="link-button" data-retry>Try again</button>
+          <a href={DATA_URL}>Download the data</a>
+        </p>
+        <p class="map-readout" data-readout hidden></p>
+      </div>
+    </div>
+  </div>
+  <p class="visually-hidden" aria-live="polite" data-live></p>
+</section>
+
+<script>
+  import '../scripts/compare';
+  import '../scripts/main';
+</script>

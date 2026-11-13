@@ -1,0 +1,161 @@
+---
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import '@fontsource/imbue/latin-400.css';
+import '@fontsource/albert-sans/latin-400.css';
+import '@fontsource/albert-sans/latin-600.css';
+import imbueUrl from '@fontsource/imbue/files/imbue-latin-400-normal.woff2?url';
+import '../styles/global.css';
+import Story from '../components/Story.astro';
+import { DATA_URL, parseArtifact } from '../lib/rainfall';
+import { buildClaims, fmt } from '../lib/story';
+
+const artifact = parseArtifact(JSON.parse(await readFile(join(process.cwd(), 'public', DATA_URL), 'utf8')));
+const claims = buildClaims(artifact);
+const audit = artifact.provenance.source_audit;
+const cellCount = fmt.count(artifact.cells.count);
+const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elninolanina/EN_Advisory_5.pdf';
+const description = `${claims['standfirst-enso'].text} ${claims['standfirst-trend'].text} NASA IMERG rainfall over the Philippines, 2001-2025.`;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <title>Ulan, measured. Philippine rainfall from NASA IMERG, 2001-2025</title>
+    <link rel="icon" href="data:," />
+    <link rel="preload" as="font" type="font/woff2" href={imbueUrl} crossorigin />
+  </head>
+  <body>
+    <a class="skip-link" href="#explore">Skip to the map explorer</a>
+    <header class="site-header">
+      <a class="wordmark" href="#top" lang="fil">Ulan</a>
+      <nav class="tab" aria-label="Page">
+        <a href="#story">Story</a>
+        <a href="#explore">Explore</a>
+        <a href="#method">Method</a>
+      </nav>
+      <button type="button" class="button button-primary header-action" data-find disabled>Find your square</button>
+    </header>
+
+    <main id="top">
+      <section class="masthead" aria-labelledby="title">
+        <div class="mosaic">
+          <img class="tile tile-lando" src="/images/lando-imerg-2015.png" width="720" height="538" fetchpriority="high"
+            alt="Satellite rainfall map of Typhoon Lando, 16 to 21 October 2015, brightest over northern Luzon." />
+          <span class="tile tile-ink" aria-hidden="true"></span>
+          <img class="tile tile-p23" src="/images/pantabangan-2023.jpg" width="720" height="480"
+            alt="Pantabangan Lake from Landsat, 29 April 2023." />
+          <span class="tile tile-yellow" aria-hidden="true"></span>
+          <img class="tile tile-pampanga" src="/images/pampanga-flood-2015.jpg" width="720" height="480"
+            alt="Muddy flood water along the Pampanga River and sediment plumes in Manila Bay, 21 October 2015." />
+          <span class="tile tile-surface" aria-hidden="true"></span>
+          <img class="tile tile-p24" src="/images/pantabangan-2024.jpg" width="720" height="480"
+            alt="Pantabangan Lake from Landsat, 15 April 2024, with lower water and exposed shores." />
+          <span class="tile tile-ink2" aria-hidden="true"></span>
+          <span class="tile tile-surface2" aria-hidden="true"></span>
+        </div>
+        <div class="title-block">
+          <h1 id="title" class="title"><span class="title-line"><span><span lang="fil">Ulan</span>,</span></span><span class="title-line"><span>measured</span></span></h1>
+          <p class="standfirst">
+            NASA satellite rain over the Philippines, 2001 to 2025, in {cellCount} squares.{' '}
+            <span data-claim={claims['standfirst-enso'].id} data-verdict={claims['standfirst-enso'].verdict}>{claims['standfirst-enso'].text}</span>{' '}
+            <span data-claim={claims['standfirst-trend'].id} data-verdict={claims['standfirst-trend'].verdict}>{claims['standfirst-trend'].text}</span>
+          </p>
+          <p class="actions">
+            <button type="button" class="button button-primary" data-find disabled>Find your square</button>
+            <a href={DATA_URL} download>Download the data</a>
+          </p>
+          <p class="mosaic-credit">Pictures, left to right: Typhoon Lando's rain from IMERG, NASA Earth Observatory map by Joshua Stevens and Jesse Allen. Pantabangan Lake in 2023 and 2024, NASA Earth Observatory images by Michala Garrison, using Landsat data from the U.S. Geological Survey. The Pampanga River in flood, NASA Earth Observatory image by Joshua Stevens, using data from LANCE/EOSDIS Rapid Response.</p>
+        </div>
+      </section>
+
+      <section class="intro" aria-label="Why this page looks back">
+        <p class="statement" data-reveal>PAGASA's El Niño <a href={PAGASA}>Advisory No. 5</a>, issued on 7 October 2026, says this El Niño may last into the first half of 2027 and raises the chance of dry spells and drought. This page does not forecast. It looks back at 25 years of satellite rain to show what changed, and what earlier El Niño years were like.</p>
+        <figure class="intro-figure" data-reveal>
+          <img src="/images/cagayan-flood-2020.jpg" width="720" height="480" loading="lazy"
+            alt="Northern Luzon from space with the brown, swollen Cagayan River running north past Tuguegarao to Aparri." />
+          <figcaption>The Cagayan River in flood on 18 November 2020, after Typhoon Vamco (Ulysses). A flood picture records one event, not a trend. NASA Earth Observatory image by Joshua Stevens, using MODIS data from NASA EOSDIS/LANCE and GIBS/Worldview.</figcaption>
+        </figure>
+      </section>
+
+      <Story artifact={artifact} claims={claims} />
+
+      <section class="method" id="method" aria-labelledby="method-heading">
+        <h2 id="method-heading" class="visually-hidden">Method</h2>
+        <ol class="staircase">
+          <li data-reveal><p class="stair">First, satellites watch the rain.</p><p>IMERG Final Run merges microwave and infrared satellite estimates with monthly rain gauges on a 0.1° grid.</p></li>
+          <li data-reveal><p class="stair">Then we add each square's days.</p><p>NASA POWER serves IMERG as daily totals in UTC days. We add them into 25 calendar years per square.</p></li>
+          <li data-reveal><p class="stair">We take the middle slope.</p><p>Sen's slope is the median of the 300 slopes between every pair of years, so one unusual year moves it less than it would move a straight-line fit.</p></li>
+          <li data-reveal><p class="stair">Last, we ask if chance could do it.</p><p>The Mann-Kendall test gives p. Below 0.05, a change meets the test. The test assumes that years are independent.</p></li>
+        </ol>
+        <div class="method-notes">
+          <p>Regional and national series are area-weighted means of the squares' annual totals. Each square counts by its area of land inside the region, times the cosine of its latitude. A square on a regional border counts toward every region it touches. The trend and test are then fitted to that aggregated series. The {artifact.regions.length} regions come from the geoBoundaries ADM1 file, which still names the Bangsamoro region ARMM.</p>
+          <p>A year "began in El Niño" when NOAA's Oceanic Niño Index for December to February is +0.5 °C or more. This is a simple rule for this page, not NOAA's full episode definition. The rule looks at the start of each year because every total here covers one calendar year. The comparison is descriptive. It has no significance test, and it does not separate El Niño from typhoons, trends or other causes.</p>
+          <p>Annual totals cannot show extremes, the timing of the dry season, or typhoon intensity. Squares are drawn at their full 0.1° size, so coastal squares include sea. The Mann-Kendall test here uses n = 25, with no correction for autocorrelation or for testing many squares at once, and neighbouring squares are not independent. Nothing on this page is a forecast. The boundary files mark the area the data covers and do not state a position on territorial claims.</p>
+          <details class="why-imerg">
+            <summary>Why we use IMERG</summary>
+            <p>We first built this map from NASA POWER's MERRA-2 rainfall, and checked it against IMERG at one point near Manila.</p>
+            <p data-claim={claims.audit.id} data-verdict={claims.audit.verdict}>{claims.audit.text}</p>
+            <p>{artifact.enso.years.includes(audit.max_ratio_year) ? `${audit.max_ratio_year} began in El Niño, so that one year would have bent both the trend and the El Niño comparison.` : 'That one year would have bent the trend.'} We rebuilt everything on IMERG. MERRA-2 appears nowhere else on this page.</p>
+            <table class="audit-table">
+              <caption>Annual rain at {fmt.lon(audit.point[0])}, {fmt.lat(audit.point[1])}, from NASA POWER point requests</caption>
+              <thead><tr><th scope="col">Year</th><th scope="col">MERRA-2</th><th scope="col">IMERG</th><th scope="col">Ratio</th></tr></thead>
+              <tbody>
+                {audit.years.map((year, index) => (
+                  <tr data-audit-year={year}><th scope="row">{year}</th><td>{fmt.mm(audit.merra2_mm[index] ?? 0)}</td><td>{fmt.mm(audit.imerg_mm[index] ?? 0)}</td><td>{(audit.ratio[index] ?? 0).toFixed(2)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+        </div>
+      </section>
+
+      <section class="sources" aria-labelledby="sources-heading">
+        <h2 id="sources-heading" class="sources-heading">Sources</h2>
+        <div class="source-columns">
+          <ul>
+            <li class="source-kind">Data</li>
+            <li><a href="https://gpm.nasa.gov/data/imerg">NASA GPM IMERG Final Run</a></li>
+            <li><a href="https://power.larc.nasa.gov/docs/methodology/data/sources/">NASA POWER daily API</a></li>
+            <li><a href="https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/ensostuff/ONI_v5.php">NOAA CPC Oceanic Niño Index</a></li>
+            <li><a href="https://www.geoboundaries.org/">geoBoundaries PHL ADM0 and ADM1</a>, <a href="https://creativecommons.org/licenses/by/3.0/igo/">CC BY 3.0 IGO</a></li>
+          </ul>
+          <ul>
+            <li class="source-kind">Map</li>
+            <li><a href="https://openfreemap.org/">OpenFreeMap</a></li>
+            <li><a href="https://openmaptiles.org/">OpenMapTiles</a></li>
+            <li><a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a></li>
+            <li><a href="https://maplibre.org/">MapLibre GL JS</a></li>
+          </ul>
+          <ul>
+            <li class="source-kind">Pictures</li>
+            <li><a href="https://science.nasa.gov/earth/earth-observatory/extreme-rainfall-in-the-philippines-86857/">NASA Earth Observatory, Typhoon Lando</a></li>
+            <li><a href="https://science.nasa.gov/earth/earth-observatory/flooding-in-northern-luzon-147554/">NASA Earth Observatory, Cagayan flood</a></li>
+            <li><a href="https://science.nasa.gov/earth/earth-observatory/water-levels-plunge-in-philippine-reservoir-152787/">NASA Earth Observatory, Pantabangan Lake</a></li>
+            <li>Joshua Stevens, Jesse Allen, Michala Garrison, USGS Landsat, NASA EOSDIS LANCE and GIBS/Worldview</li>
+          </ul>
+          <ul>
+            <li class="source-kind">Context</li>
+            <li><a href={PAGASA}>PAGASA El Niño Advisory No. 5</a></li>
+            <li><a href="https://fonts.google.com/specimen/Imbue">Imbue</a> and <a href="https://fonts.google.com/specimen/Albert+Sans">Albert Sans</a>, SIL Open Font License</li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-columns">
+        <p><a href="#story">Story</a><br /><a href="#explore">Explore</a><br /><a href="#method">Method</a></p>
+        <p><a href={DATA_URL} download>Download the data (JSON)</a></p>
+        <p>Made for NASA Space Apps 2026, Be An Earth System Trend Detective.</p>
+      </div>
+      <svg class="footer-wordmark" viewBox="0 0 400 100" role="img" aria-label="Ulan"><text x="0" y="92" textLength="400" lengthAdjust="spacingAndGlyphs">ULAN</text></svg>
+      <p class="footer-note">Not affiliated with or endorsed by NASA, NOAA or PAGASA.</p>
+    </footer>
+    <script>
+      import '../scripts/reveal';
+    </script>
+  </body>
+</html>

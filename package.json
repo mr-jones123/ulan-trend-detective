@@ -1,0 +1,28 @@
+{
+  "name": "philippines-rainfall-map",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "check": "astro check",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@fontsource/albert-sans": "5.3.0",
+    "@fontsource/imbue": "5.3.0",
+    "astro": "7.4.1",
+    "maplibre-gl": "6.15.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.11",
+    "@maplibre/maplibre-gl-style-spec": "26.4.4",
+    "@types/node": "24.19.2",
+    "typescript": "~6.0.3"
+  }
+}
