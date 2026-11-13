@@ -36,11 +36,15 @@ name = "philippines-rainfall-map"
 version = "1.0.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "numpy" },
     { name = "shapely" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "shapely", specifier = ">=2.2,<3" }]
+requires-dist = [
+    { name = "numpy", specifier = ">=2.5,<3" },
+    { name = "shapely", specifier = ">=2.2,<3" },
+]
 
 [[package]]
 name = "shapely"
