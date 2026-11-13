@@ -277,8 +277,10 @@ export function buildClaims(a: Artifact): Claims {
       direction: day.enso_direction === 'zero' ? 'none' : day.enso_direction,
       text: `Across ${farm.sites.length} cropland sites, January to April fields ${temperatureGap} in El Niño-start years ${day.enso_direction === 'zero' ? 'as' : 'than'} in other years. This is an equal-weight mean of the outlined sites, not every farm in the country.` },
     'farm-night': { id: 'farm-night', verdict: nightVerdict, direction: TREND_DIRECTION[nightVerdict],
-      heading: { rise_meets: 'Farm nights are warming', fall_meets: 'Farm nights are cooling',
-        rise: 'Farm nights could be warming', fall: 'Farm nights could be cooling', zero: 'Farm nights have no fitted change' }[nightVerdict],
+      heading: night.meets_threshold && !night.refit.meets_threshold
+        ? (nightVerdict === 'rise_meets' ? 'Warmer farm nights, or a drifting satellite?' : 'Cooler farm nights, or a drifting satellite?')
+        : { rise_meets: 'Farm nights are warming', fall_meets: 'Farm nights are cooling',
+          rise: 'Farm nights could be warming', fall: 'Farm nights could be cooling', zero: 'Farm nights have no fitted change' }[nightVerdict],
       text: `The site-mean January to April night surface temperature ${nightChange} over 2001-2025. It ${night.meets_threshold ? 'meets' : 'does not meet'} the unadjusted p < 0.05 test (${fmt.pSameSideOfAlpha(night.p, night.meets_threshold, alpha)}).` },
     'farm-sites': { id: 'farm-sites', verdict: farm.night_rising_meets === 0 ? 'none' : 'up',
       direction: farm.night_rising_meets === 0 ? 'none' : 'up',
