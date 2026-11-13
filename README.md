@@ -97,6 +97,8 @@ Day and night temperature use separate `LST_Day_1km` and `LST_Night_1km` request
 
 **Artifact schema.** `ph-rain-imerg-v3` retains the annual and January to April IMERG records and adds integer `cells.cropland_pct`. `farm.rain` holds the cropland-weighted January to April rain series and El Niño comparison. `farm.day` and `farm.night` hold site-mean °C series, trends, tests, El Niño differences and 2001-2019 refits. `farm.sites` holds the 12 derived centres, window outlines, 1 km cropland pixel counts and corresponding day and night records. `farm.night_rising_meets` counts sites whose rising night slope meets the unadjusted test. `provenance.modis` pins the derived snapshot and request manifest. The El Niño and farmland map modes use January to April rain. Average, one-year and trend map modes stay annual. Farm charts reuse `chartHtml` with °C units rather than a separate chart renderer.
 
+Temperature charts show each year's difference in °C from that series' 2001-2025 mean. Bars extend above or below the zero line at the mean, and fitted trends use the same anomaly scale. The caption gives the absolute mean. Scale bounds and trend labels occupy separate rows so they cannot overlap. Rainfall charts keep their zero-based mm scale.
+
 ## Results at build time
 
 These are the values in the current artifact. They come from the builder's output, not from hand entry.

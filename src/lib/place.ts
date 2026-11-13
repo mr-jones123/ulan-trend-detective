@@ -68,7 +68,7 @@ export function placeOf(a: Artifact, grid: CellGrid, focus: Focus): Place {
 export function placeChart(a: Artifact, place: Place, selectedYear: number | null, mode: Mode): ChartInput {
   const seasonal = mode === 'enso' || mode === 'farm';
   return {
-    unit: 'mm',
+    unit: 'mm', baseline: 'zero',
     summary: seasonal
       ? `January to April rainfall in El Niño-start years was ${fmt.signedPct(place.ensoDiffPct)} against other years. History, not a forecast.`
       : `Fitted change ${fmt.signedPct(place.pctDecade)} per decade (${fmt.pSameSideOfAlpha(place.p, place.meets, a.alpha)}), ${place.meets ? 'meets the unadjusted p < 0.05 test' : 'could be chance'}.`,
@@ -86,7 +86,7 @@ export function farmChart(a: Artifact, period: 'day' | 'night', summary: string)
   const s = a.farm[period];
   return {
     key: `farm:${period}`, name: `Cropland sites, ${period} surface temperature`, years: a.period.years,
-    totals: s.c, period: 'January to April', unit: '°C', summary,
+    totals: s.c, period: 'January to April', unit: '°C', baseline: 'mean', summary,
     enso: a.enso.began_el_nino, mean: s.mean_c, selectedYear: null,
     trend: { senPerDecade: s.sen_c_decade, mid: s.sen_mid_c,
       label: s.meets_threshold ? `${s.sen_c_decade > 0 ? '+' : ''}${s.sen_c_decade.toFixed(2)} °C per decade`
