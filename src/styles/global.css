@@ -292,7 +292,10 @@ figcaption { font-size: var(--small); color: var(--muted); margin-top: 10px; lin
 .site-footer { background: var(--ink); color: var(--bg); padding: 64px var(--margin) 24px; min-height: 60svh; display: flex; flex-direction: column; justify-content: space-between; }
 .footer-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; font-size: var(--small); }
 .footer-wordmark { width: 100%; height: auto; margin-top: 48px; }
-.footer-wordmark text { font-family: var(--display-face); font-size: 100px; fill: var(--bg); }
+.footer-wordmark text { font-family: var(--display-face); font-size: 100px; fill: var(--bg); transition: fill 200ms ease; }
+.footer-wordmark-link { display: block; color: inherit; }
+.footer-wordmark-link:hover text, .footer-wordmark-link:focus-visible text { fill: var(--accent); }
+.footer-wordmark-link:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 .footer-note { font-size: 0.8125rem; margin: 12px 0 0; }
 
 .reveal-ready [data-reveal] { transition: opacity 600ms var(--ease-out), transform 600ms var(--ease-out); }
