@@ -95,12 +95,12 @@ h1, h2, h3 { font-family: var(--display-face); font-weight: 400; letter-spacing:
 @keyframes line-rise { from { transform: translateY(105%); } to { transform: translateY(0); } }
 @keyframes fade-up { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
 
-.intro { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: auto 1fr; column-gap: 24px; padding: 0 var(--margin) clamp(120px, 12vw, 200px); }
-.statement { grid-column: 7 / span 6; grid-row: 1; font-size: min(var(--lead), 36px); line-height: 1.35; text-indent: 2em; margin: 0; }
+.intro { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-template-rows: 1fr 1fr; column-gap: 24px; padding: 0 var(--margin) clamp(120px, 12vw, 200px); }
+.statement { grid-column: 7 / span 6; grid-row: 1; align-self: end; font-size: min(var(--lead), 36px); line-height: 1.35; text-indent: 2em; margin: 0; }
 .intro-figure { grid-column: 1 / span 5; grid-row: 1 / span 2; margin: 0; }
-.intro-figure img { aspect-ratio: 1; object-fit: cover; object-position: 55% 30%; width: 100%; }
+.intro-figure img { aspect-ratio: 3 / 2; object-fit: cover; object-position: 55% 30%; width: 100%; }
 figcaption { font-size: var(--small); color: var(--muted); margin-top: 10px; line-height: 1.45; }
-.january-years { grid-column: 7 / span 6; grid-row: 2; min-width: 0; margin: 40px 0 0; }
+.january-years { grid-column: 7 / span 6; grid-row: 2; align-self: start; min-width: 0; margin: 40px 0 0; }
 .january-squares { display: grid; grid-template-columns: repeat(25, minmax(0, 1fr)); gap: 2px; list-style: none; margin: 0; padding: 0; }
 .january-squares li { position: relative; aspect-ratio: 1; background: var(--square-colour); }
 .january-squares li[data-el-nino='true']::after { content: ''; position: absolute; width: 35%; aspect-ratio: 1; top: 32.5%; left: 32.5%; background: var(--ink); }
