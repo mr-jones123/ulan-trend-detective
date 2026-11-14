@@ -22,6 +22,7 @@ const yearPoint = z.object({ year: z.int().min(FIRST_YEAR), mm: z.number().nonne
 const ensoComparison = z.object({
   mean_mm: z.number().nonnegative(), other_mean_mm: z.number().positive(), diff_pct: z.number(), direction,
   below_mean: z.int().nonnegative(), group_size: z.int().positive(), other_size: z.int().positive(),
+  p: z.number().min(0).max(1), meets_threshold: z.boolean(),
 });
 
 const series = z.object({
@@ -78,6 +79,7 @@ const airSeries = z.object({
   enso_diff_c: z.number(), enso_direction: direction,
 });
 const temperature = airSeries.extend({
+  enso_p: z.number().min(0).max(1),
   refit: z.object({
     start: z.literal(2001), end: z.literal(2019), sen_c_decade: z.number(),
     p: z.number().min(0).max(1), direction, meets_threshold: z.boolean(),
@@ -87,7 +89,7 @@ const greenness = z.object({
   ndvi: z.array(z.number().min(-0.2).max(1)).length(YEAR_COUNT),
   mean_ndvi: z.number().min(-0.2).max(1), sen_ndvi_decade: z.number(), sen_mid_ndvi: z.number(),
   p: z.number().min(0).max(1), direction, meets_threshold: z.boolean(),
-  enso_diff_ndvi: z.number(), enso_direction: direction,
+  enso_diff_ndvi: z.number(), enso_direction: direction, enso_p: z.number().min(0).max(1),
   refit: z.object({
     start: z.literal(2001), end: z.literal(2019), sen_ndvi_decade: z.number(),
     p: z.number().min(0).max(1), direction, meets_threshold: z.boolean(),
@@ -118,7 +120,7 @@ export const rainfallSchema = z.object({
   }),
   enso: z.object({
     rule: z.string(), threshold: z.literal(0.5), oni_djf: yearly,
-    began_el_nino: z.array(z.boolean()).length(YEAR_COUNT), years: z.array(z.int()),
+    began_el_nino: z.array(z.boolean()).length(YEAR_COUNT), years: z.array(z.int()), permutations: z.int().positive(),
     source: snapshot.extend({ provider: z.string() }),
   }),
   legend: z.object({
@@ -156,6 +158,16 @@ export const rainfallSchema = z.object({
   }),
   climate: z.object({ k: z.literal(4), iterations: z.int().positive(), inertia: z.number().positive(),
     groups: z.array(climateGroup).length(4) }),
+  news: z.object({
+    file: z.string(), sha256, retrieved: z.string(), near_normal_pct: z.number().positive(),
+    events: z.array(z.object({
+      year: z.int().min(FIRST_YEAR), national_anomaly_pct: z.number(), region_count: z.int().positive(),
+      reports: z.array(z.object({ outlet: z.string(), title: z.string(), url: z.url(), published: z.string(), sha256, quote: z.string() })).min(1),
+      regions: z.array(z.object({ id: regionId, name: z.string(), reported: z.string(), jan_apr_anomaly_pct: z.number(),
+        dry_rank: z.int().positive(), near_normal: z.boolean() })).min(1),
+    })).min(1),
+    research: z.object({ author: z.string(), title: z.string(), url: z.url(), quote: z.string() }),
+  }),
   regions: z.array(region).length(17),
   cells: z.object({
     count: z.int().positive(),

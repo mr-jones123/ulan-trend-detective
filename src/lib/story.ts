@@ -25,6 +25,12 @@ export const fmt = {
     if (items.length <= 2) return items.join(' and ');
     return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
   },
+  /** Small p-values in plain decimals (0.0000044), never rounded to zero. */
+  pExact(p: number): string {
+    if (p < 0.000001) return 'p < 0.000001';
+    if (p < 0.001) return `p = ${Number(p.toPrecision(2)).toFixed(-Math.floor(Math.log10(p)) + 1)}`;
+    return `p = ${p.toFixed(p < 0.01 ? 4 : 3)}`;
+  },
   lat: (value: number) => `${Math.abs(value).toFixed(2)}° ${value >= 0 ? 'N' : 'S'}`,
   lon: (value: number) => `${Math.abs(value).toFixed(2)}° ${value >= 0 ? 'E' : 'W'}`,
 };
@@ -71,7 +77,7 @@ export const CLAIM_IDS = [
   'enso-region', 'pantabangan-enso', 'pantabangan-2024', 'trend', 'trend-where', 'trend-where-other',
   'trend-region', 'next-year', 'audit', 'season-window', 'pantabangan-context', 'pantabangan-limit',
   'comparison-limit', 'method-totals', 'method-weights', 'method-enso', 'method-limits',
-  'farm-rain', 'farm-day', 'farm-night', 'farm-sites', 'farm-drift', 'farm-context', 'farm-limit', 'farm-chart', 'method-farm', 'giovanni', 'farm-night-air', 'farm-green', 'farm-green-trend', 'farm-green-chart', 'climate', 'climate-enso', 'climate-method',
+  'farm-rain', 'farm-day', 'farm-night', 'farm-sites', 'farm-drift', 'farm-context', 'farm-limit', 'farm-chart', 'method-farm', 'giovanni', 'farm-night-air', 'farm-green', 'farm-green-trend', 'farm-green-chart', 'climate', 'climate-enso', 'climate-method', 'enso-test', 'news-2024', 'news-2019', 'news-limit',
 ] as const;
 export type ClaimId = (typeof CLAIM_IDS)[number];
 
@@ -117,6 +123,12 @@ function ensoBelow(e: Series['enso'], noun: string, baseline: string): { text: s
   if (e.below_mean === 0) return { text: `All ${group} were at or above ${baseline}.`, direction: 'up' };
   const subject = e.below_mean === e.group_size ? `All ${group}` : `${e.below_mean} of the ${group}`;
   return { text: `${subject} had less rain than ${baseline}.`, direction: 'down' };
+}
+
+/** One sentence reporting the exact permutation test for an El Niño-start comparison. */
+export function ensoTestSentence(a: Artifact, p: number): string {
+  const how = `An exact permutation test, which tries all ${fmt.count(a.enso.permutations)} ways to pick ${a.enso.years.length} of the 25 years, gives ${fmt.pExact(p)}`;
+  return p < a.alpha ? `${how}: a gap this large is very unlikely to be chance.` : `${how}, so chance could produce a gap this size.`;
 }
 
 function gapClaim(id: ClaimId, direction: Direction, texts: Record<Direction, string>): Claim {
@@ -167,10 +179,15 @@ export function buildClaims(a: Artifact): Claims {
   const ensoNames = regionNames(a, ensoIds);
   const less = f.regions_enso_less;
   const lessCount = less === regionCount ? `All ${less} regions` : less === 0 ? 'No region' : `${less} of the ${regionCount} regions`;
+  const regionPs = a.regions.map((r) => r.jan_apr.enso.p);
+  const regionsMeeting = a.regions.filter((r) => r.jan_apr.enso.meets_threshold).length;
+  const regionTest = regionsMeeting === regionCount
+    ? ` Each region's gap meets the test on its own; the largest ${fmt.pExact(Math.max(...regionPs))}.`
+    : ` ${regionsMeeting} of the ${regionCount} regions' gaps meet the test on their own.`;
   const ensoRegionClaim: Record<Direction, Claim> = {
     down: { id: 'enso-region', verdict: 'down', direction: 'down',
       heading: ensoIds.length > 1 ? `${ensoIds.length} regions share the widest gap` : `${ensoLead.name} had the widest gap`,
-      text: `From January to April in ${ensoNames}, El Niño-start years averaged ${fmt.pct(ensoLead.jan_apr.enso.diff_pct)} less rain than other years, the widest gap among the ${regionCount} regions. ${lessCount} had less rain in that window.` },
+      text: `From January to April in ${ensoNames}, El Niño-start years averaged ${fmt.pct(ensoLead.jan_apr.enso.diff_pct)} less rain than other years, the widest gap among the ${regionCount} regions. ${lessCount} had less rain in that window.${regionTest}` },
     up: { id: 'enso-region', verdict: 'up', direction: 'up', heading: 'Every region had more rain in El Niño years',
       text: `From January to April in ${ensoNames}, where El Niño-start years compare lowest against other years, those years averaged ${fmt.pct(ensoLead.jan_apr.enso.diff_pct)} more rain.` },
     zero: { id: 'enso-region', verdict: 'zero', direction: 'none', heading: 'No region stood apart in El Niño years',
@@ -267,15 +284,15 @@ export function buildClaims(a: Artifact): Claims {
     }),
     'farm-rain': {
       ...gapClaim('farm-rain', farmGap.direction, {
-        down: `Across cropland-weighted IMERG squares, January to April rain averaged ${fmt.pct(farmGap.diff_pct)} less in El Niño-start years than in other years, ${fmt.mm(farmGap.mean_mm)} against ${fmt.mm(farmGap.other_mean_mm)}.`,
-        up: `Across cropland-weighted IMERG squares, January to April rain averaged ${fmt.pct(farmGap.diff_pct)} more in El Niño-start years than in other years, ${fmt.mm(farmGap.mean_mm)} against ${fmt.mm(farmGap.other_mean_mm)}.`,
+        down: `Across cropland-weighted IMERG squares, January to April rain averaged ${fmt.pct(farmGap.diff_pct)} less in El Niño-start years than in other years, ${fmt.mm(farmGap.mean_mm)} against ${fmt.mm(farmGap.other_mean_mm)}. ${ensoTestSentence(a, farmGap.p)}`,
+        up: `Across cropland-weighted IMERG squares, January to April rain averaged ${fmt.pct(farmGap.diff_pct)} more in El Niño-start years than in other years, ${fmt.mm(farmGap.mean_mm)} against ${fmt.mm(farmGap.other_mean_mm)}. ${ensoTestSentence(a, farmGap.p)}`,
         zero: 'Across cropland-weighted IMERG squares, January to April rain averaged the same in El Niño-start years and other years.',
       }),
       heading: 'Farmland in El Niño-start years',
     },
     'farm-day': { id: 'farm-day', verdict: day.enso_direction,
       direction: day.enso_direction === 'zero' ? 'none' : day.enso_direction,
-      text: `Across ${farm.sites.length} cropland sites, January to April fields ${temperatureGap} in El Niño-start years ${day.enso_direction === 'zero' ? 'as' : 'than'} in other years. This is an equal-weight mean of the outlined sites, not every farm in the country.` },
+      text: `Across ${farm.sites.length} cropland sites, January to April fields ${temperatureGap} in El Niño-start years ${day.enso_direction === 'zero' ? 'as' : 'than'} in other years. This is an equal-weight mean of the outlined sites, not every farm in the country. ${ensoTestSentence(a, day.enso_p)}` },
     'farm-night': { id: 'farm-night', verdict: nightVerdict, direction: TREND_DIRECTION[nightVerdict],
       heading: night.meets_threshold && !night.refit.meets_threshold
         ? (nightVerdict === 'rise_meets' ? 'Warmer farm nights, or a drifting satellite?' : 'Cooler farm nights, or a drifting satellite?')
@@ -288,13 +305,16 @@ export function buildClaims(a: Artifact): Claims {
         : `At ${farm.night_rising_meets} of ${farm.sites.length} sites, a rising night slope meets the test.` },
     'farm-drift': { id: 'farm-drift', verdict: trendVerdict(refit), direction: 'none',
       text: `Terra's orbit drift after 2020 moved its overpasses earlier. Refitting only 2001-2019 gives ${refitChange} (${fmt.pSameSideOfAlpha(refit.p, refit.meets_threshold, alpha)}), which ${refit.meets_threshold ? 'meets' : 'does not meet'} the test. The full-record result cannot separate climate from changing observation time.` },
-    ...greenClaims(farm, alpha),
+    ...greenClaims(a, farm, alpha),
     ...climateClaims(a),
     'farm-night-air': nightAirClaim(farm.night, farm.night_air, alpha),
     'farm-context': { id: 'farm-context', verdict: 'context-only', direction: 'mixed',
       text: 'Peng and colleagues reported in 2004 that dry-season rice grain yield at IRRI in Los Baños fell about 10% per 1 °C of higher minimum air temperature. Their January to April field study is context, not a conversion from these satellite observations to Philippine yield loss.' },
+    'enso-test': { id: 'enso-test', verdict: enso.meets_threshold ? 'meets' : 'chance', direction: 'none',
+      text: ensoTestSentence(a, enso.p) },
+    ...newsClaims(a),
     'farm-limit': { id: 'farm-limit', verdict: 'fixed', direction: 'none',
-      text: 'MODIS measures land surface temperature under clear skies, not air temperature. Clouds hide observations, and the sites are selected for cropland density, not as a representative national sample. A fixed 2020 cropland mask does not track land-use change. These comparisons are descriptive, not evidence that El Niño caused each difference.' },
+      text: 'MODIS measures land surface temperature under clear skies, not air temperature. Clouds hide observations, and the sites are selected for cropland density, not as a representative national sample. A fixed 2020 cropland mask does not track land-use change. Even a comparison that meets the test shows association, not proof that El Niño caused each difference.' },
     'farm-chart': { id: 'farm-chart', verdict: 'fixed', direction: 'none',
       text: 'January to April clear-sky surface temperature, equal-weight site mean.' },
     'method-farm': { id: 'method-farm', verdict: 'fixed', direction: 'none',
@@ -322,7 +342,7 @@ export function buildClaims(a: Artifact): Claims {
     'method-weights': { id: 'method-weights', verdict: 'fixed', direction: 'none',
       text: `Regional and national series use the same land-area weights for annual and January to April totals. Each square counts by its land area inside the boundary, times the cosine of its latitude. Border squares count toward every region they touch. Rainfall trends use only the annual series. The ${regionCount} regions come from geoBoundaries ADM1, which still names the Bangsamoro region ARMM.` },
     'method-enso': { id: 'method-enso', verdict: 'fixed', direction: 'none',
-      text: "A year began in El Niño when NOAA's December-to-February Oceanic Niño Index is +0.5 °C or more. This is this page's start-of-year rule, not NOAA's full episode definition. The map compares January to April totals in those years with the same months in other years. Annual comparisons remain as context. The comparison has no significance test and does not separate El Niño from other causes." },
+      text: "A year began in El Niño when NOAA's December-to-February Oceanic Niño Index is +0.5 °C or more. This is this page's start-of-year rule, not NOAA's full episode definition. The map compares January to April totals in those years with the same months in other years. Annual comparisons remain as context. We test each comparison with an exact permutation test: every way of choosing which years count as El Niño-start years is tried, and p is the share of choices with a gap at least as large. It treats years as interchangeable and does not separate El Niño from other causes." },
     'method-limits': { id: 'method-limits', verdict: 'fixed', direction: 'none',
       text: 'Annual and January to April totals cannot show daily extremes, rain timing within either window or typhoon intensity. Coastal squares include sea. The Mann-Kendall test uses 25 annual values, with no correction for autocorrelation or multiple testing. Neighbouring squares are not independent. Nothing here is a forecast. The boundary files mark data coverage, not a position on territorial claims.' },
     giovanni: giovanniClaim(a),
@@ -355,7 +375,30 @@ function climateClaims(a: Artifact): Pick<Claims, 'climate' | 'climate-enso' | '
   };
 }
 
-function greenClaims(farm: Artifact['farm'], alpha: number): Pick<Claims, 'farm-green' | 'farm-green-trend' | 'farm-green-chart'> {
+const ORDINAL = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`;
+
+function newsClaims(a: Artifact): Pick<Claims, 'news-2024' | 'news-2019' | 'news-limit'> {
+  const near = a.news.near_normal_pct;
+  const sentence = (year: number): Claim => {
+    const e = a.news.events.find((x) => x.year === year);
+    if (e === undefined) throw new Error(`No news event for ${year}`);
+    const dry = e.regions.filter((r) => r.jan_apr_anomaly_pct <= -near);
+    const other = e.regions.filter((r) => r.jan_apr_anomaly_pct > -near);
+    const first = e.regions[0]!;
+    const otherText = other.length === 0 ? ''
+      : ` ${fmt.list(other.map((r) => `${r.name} (${fmt.signedPct(r.jan_apr_anomaly_pct)})`))} ${other.length === 1 ? 'was' : 'were'} close to normal in our data, so the regional rain total does not explain the damage reported there. Local dry spells, heat or irrigation could; this page cannot test them.`;
+    return { id: year === 2024 ? 'news-2024' : 'news-2019', verdict: other.length === 0 ? 'all-dry' : 'some-normal', direction: 'mixed',
+      text: `${year}: ${dry.length} of the ${e.regions.length} regions in the DA reports had at least ${near}% less January to April rain than average in our data. ${first.name}, named first, was the ${ORDINAL(first.dry_rank)} driest of ${e.region_count} regions.${otherText}` };
+  };
+  return {
+    'news-2024': sentence(2024),
+    'news-2019': sentence(2019),
+    'news-limit': { id: 'news-limit', verdict: 'fixed', direction: 'none',
+      text: 'These are early-season Department of Agriculture bulletins as reported in the news, not final totals. Farm damage also depends on irrigation, crop timing and planted area, so agreement with the rain record is context, not proof. There are too few years for a formal test.' },
+  };
+}
+
+function greenClaims(a: Artifact, farm: Artifact['farm'], alpha: number): Pick<Claims, 'farm-green' | 'farm-green-trend' | 'farm-green-chart'> {
   const g = farm.green;
   const n = farm.sites.length;
   const signed = (v: number) => `${v > 0 ? '+' : v < 0 ? MINUS : ''}${Math.abs(v).toFixed(3)} NDVI per decade`;
@@ -367,7 +410,7 @@ function greenClaims(farm: Artifact['farm'], alpha: number): Pick<Claims, 'farm-
     'farm-green': {
       id: 'farm-green', verdict: g.enso_direction, direction: g.enso_direction === 'zero' ? 'none' : g.enso_direction,
       heading: { down: 'The fields were less green', up: 'The fields were greener', zero: 'The fields were as green' }[g.enso_direction],
-      text: `NDVI measures how green plants look from space, from 0 for bare ground to about 0.9 for dense, healthy leaves. Across the same ${n} cropland sites, January to April NDVI averaged ${g.mean_ndvi.toFixed(3)}. In El Niño-start years it was ${Math.abs(g.enso_diff_ndvi).toFixed(3)} ${word} than in other years, and ${farm.green_lower_sites} of ${n} sites were lower.`,
+      text: `NDVI measures how green plants look from space, from 0 for bare ground to about 0.9 for dense, healthy leaves. Across the same ${n} cropland sites, January to April NDVI averaged ${g.mean_ndvi.toFixed(3)}. In El Niño-start years it was ${Math.abs(g.enso_diff_ndvi).toFixed(3)} ${word} than in other years, and ${farm.green_lower_sites} of ${n} sites were lower. ${ensoTestSentence(a, g.enso_p)}`,
     },
     'farm-green-trend': {
       id: 'farm-green-trend', verdict: g.meets_threshold ? 'meets' : 'chance', direction: 'none',

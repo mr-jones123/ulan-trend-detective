@@ -389,3 +389,25 @@ figcaption { font-size: var(--small); color: var(--muted); margin-top: 10px; lin
 .calendar svg { width: 100%; height: auto; display: block; }
 .calendar text { font-size: 6px; fill: var(--muted); }
 .calendar p { margin: 4px 0 0; font-size: var(--small); color: var(--muted); }
+
+.news-check { margin: 32px 0; padding: 20px; background: color-mix(in srgb, var(--bg) 85%, transparent); }
+.news-check h4 { margin: 0 0 8px; font-family: var(--display-face); font-weight: 400; font-size: var(--lead); line-height: 1.1; }
+.news-year { margin-top: 20px; }
+.table-scroll { overflow-x: auto; }
+.news-table { border-collapse: collapse; width: 100%; font-size: var(--small); margin-top: 8px; }
+.news-table caption { text-align: left; caption-side: top; color: var(--muted); padding-bottom: 6px; }
+.news-table th, .news-table td { text-align: left; vertical-align: top; padding: 5px 8px 5px 0; border-bottom: 1px solid rgb(13 42 28 / 0.15); }
+.news-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.news-table tr[data-near-normal='true'] { background: rgb(13 42 28 / 0.08); }
+.news-table tr[data-near-normal='true'] th::after { content: ' · near normal'; font-weight: 400; color: var(--muted); }
+.news-sources { font-size: var(--small); color: var(--muted); }
+
+.why { padding: clamp(96px, 10vw, 160px) var(--margin); background: var(--ink); color: var(--bg); }
+.why-kicker { margin: 0 0 16px; text-transform: uppercase; letter-spacing: 0.1em; font-size: var(--small); font-weight: 600; color: var(--accent); }
+.why-heading { margin: 0; max-width: 22ch; font-family: var(--display-face); font-weight: 400; font-size: var(--head); line-height: 1.05; text-wrap: balance; }
+.why-lede { max-width: 62ch; font-size: var(--lead); line-height: 1.45; margin: 28px 0 0; }
+.why-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; margin-top: 56px; }
+.why-columns article { border-top: 2px solid var(--accent); padding-top: 16px; min-width: 0; }
+.why-columns h3 { margin: 0 0 8px; font-family: var(--text-face); font-size: var(--body); font-weight: 600; letter-spacing: 0; }
+.why-columns p { margin: 0; line-height: 1.55; }
+@media (max-width: 900px) { .why-columns { grid-template-columns: minmax(0, 1fr); gap: 24px; } }

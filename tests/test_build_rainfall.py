@@ -229,3 +229,11 @@ class FarmCheckTests(unittest.TestCase):
         self.assertEqual(tmin.parse(raw(days), 15.5, 120.5), [20.0] * len(imerg.YEARS))
         with self.assertRaises(ValueError):
             tmin.parse(raw({**days, "20240229": -999}), 15.5, 120.5)
+
+
+class PermutationTests(unittest.TestCase):
+    def test_exact_permutation_p_counts_every_split(self):
+        from scripts.build_rainfall import permutation_p
+        # 6 ways to pick 2 of 4 years; only {1, 2} and {3, 4} are as extreme as the observed gap.
+        self.assertAlmostEqual(permutation_p([1, 2, 3, 4], [True, True, False, False]), 2 / 6)
+        self.assertEqual(permutation_p([5, 5, 5, 5], [True, False, True, False]), 1.0)

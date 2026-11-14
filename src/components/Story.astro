@@ -46,7 +46,7 @@ const CLAIMS_BY_CHAPTER: Record<ChapterId, readonly Claim[]> = {
   wettest: [claims.wettest],
   swing: [claims.swing],
   climate: [claims.climate],
-  enso: [claims.enso, claims['season-window']],
+  enso: [claims.enso, claims['enso-test'], claims['season-window']],
   'enso-region': [claims['enso-region']],
   pantabangan: [],
   'farm-enso': [claims['farm-rain'], claims['farm-day']],
@@ -202,6 +202,31 @@ const trendResult = (s: Pick<typeof n, 'direction' | 'sen_mm_decade' | 'p' | 'me
             <>
               <div data-reveal data-claim="farm-chart" data-verdict={claims['farm-chart'].verdict} set:html={chartHtml(farmChart(a, chapter.id === 'farm-enso' ? 'day' : 'night', claims['farm-chart'].text))} />
               {chapter.id === 'farm-enso' && <p class="note" data-claim="farm-limit" data-verdict={claims['farm-limit'].verdict} data-reveal>{claims['farm-limit'].text}</p>}
+              {chapter.id === 'farm-enso' && (
+                <section class="news-check" aria-labelledby="news-check-heading" data-reveal>
+                  <h4 id="news-check-heading">Did the satellites see what farmers reported?</h4>
+                  <p>We matched Department of Agriculture farm-damage reports from the news with each named region's January to April rain that year. Rank 1 is the driest of {a.regions.length} regions.</p>
+                  {a.news.events.map((e) => (
+                    <div class="news-year">
+                      <p data-claim={claims[e.year === 2024 ? 'news-2024' : 'news-2019'].id} data-verdict={claims[e.year === 2024 ? 'news-2024' : 'news-2019'].verdict}>{claims[e.year === 2024 ? 'news-2024' : 'news-2019'].text}</p>
+                      <div class="table-scroll">
+                        <table class="news-table">
+                          <caption>{e.year}: DA reports and our January to April rain (national {fmt.signedPct(e.national_anomaly_pct)})</caption>
+                          <thead><tr><th scope="col">Region</th><th scope="col">Reported</th><th scope="col" class="num">Rain vs average</th><th scope="col" class="num">Dry rank</th></tr></thead>
+                          <tbody>
+                            {e.regions.map((r) => (
+                              <tr data-near-normal={String(r.jan_apr_anomaly_pct > -a.news.near_normal_pct)}><th scope="row">{r.name}</th><td>{r.reported}</td><td class="num">{fmt.signedPct(r.jan_apr_anomaly_pct)}</td><td class="num">{r.dry_rank}</td></tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p class="news-sources">Sources: {e.reports.map((r, i) => <>{i > 0 && '; '}<a href={r.url}>{r.outlet}, {r.published}</a></>)}</p>
+                    </div>
+                  ))}
+                  <p class="note">Research agrees satellites can see this: {a.news.research.author}, <a href={a.news.research.url}>{a.news.research.title}</a>, found that satellite drought indices “{a.news.research.quote}”</p>
+                  <p class="note" data-claim={claims['news-limit'].id} data-verdict={claims['news-limit'].verdict}>{claims['news-limit'].text}</p>
+                </section>
+              )}
               {chapter.id === 'farm-night' && <p class="note" data-claim="farm-context" data-verdict={claims['farm-context'].verdict} data-reveal>{claims['farm-context'].text} <a href="https://doi.org/10.1073/pnas.0403720101">Read Peng et al. (2004)</a>.</p>}
             </>
           )}

@@ -22,6 +22,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+import numpy as np
 from shapely.geometry import MultiPolygon, Polygon, box, shape
 from shapely.ops import unary_union
 from shapely.prepared import prep
@@ -50,6 +51,8 @@ REGION_COUNT = 17
 AUDIT_POINT = (121.25, 14.5)
 PANTABANGAN = (121.14, 15.85)
 GIOVANNI = SOURCES / "giovanni" / "imerg-monthly-ph-bbox.csv"
+NEWS = SOURCES / "news" / "el-nino-farm-damage.json"
+NEAR_NORMAL_PCT = 25
 GIOVANNI_BBOX = [116.9, 4.5, 126.7, 21.2]
 DIVERGING_EXTENTS = (2, 4, 5, 8, 10, 15, 20, 30, 40, 50, 60, 80, 100)
 MEAN_CLASSES = 7
@@ -304,6 +307,32 @@ def giovanni_check(raw, ours, flags):
     }
 
 
+def news_record(region_records, national):
+    """Compare DA farm-damage reports with each named region's January to April rain that year."""
+    raw = NEWS.read_bytes()
+    data = json.loads(raw)
+    if data.get("schema") != "news-farm-damage-v1":
+        raise ValueError("Unexpected news snapshot schema")
+    by_id = {r["id"]: r for r in region_records}
+    events = []
+    for event in data["events"]:
+        k = YEARS.index(event["year"])
+        order = sorted(by_id.values(), key=lambda r: (r["jan_apr"]["anomaly_pct"][k], r["id"]))
+        rank = {r["id"]: i + 1 for i, r in enumerate(order)}
+        regions = []
+        for item in event["regions"]:
+            if item["id"] not in by_id:
+                raise ValueError(f"News region {item['id']} is not one of the mapped regions")
+            pct = by_id[item["id"]]["jan_apr"]["anomaly_pct"][k]
+            regions.append({"id": item["id"], "name": by_id[item["id"]]["name"], "reported": item["reported"],
+                            "jan_apr_anomaly_pct": pct, "dry_rank": rank[item["id"]],
+                            "near_normal": abs(pct) < NEAR_NORMAL_PCT})
+        events.append({"year": event["year"], "reports": event["reports"], "regions": regions,
+                       "national_anomaly_pct": national["jan_apr"]["anomaly_pct"][k], "region_count": len(by_id)})
+    return {"file": str(NEWS.relative_to(ROOT)), "sha256": sha256(raw), "retrieved": data["retrieved"],
+            "near_normal_pct": NEAR_NORMAL_PCT, "events": events, "research": data["research"]}
+
+
 def sen_slope(values):
     return statistics.median((values[j] - values[i]) / (j - i)
                              for i in range(len(values)) for j in range(i + 1, len(values)))
@@ -341,7 +370,32 @@ def trend(values):
     return slope, sen_intercept(values, slope), s, p
 
 
-def enso_comparison(values, flags, mean):
+_COMBOS = {}
+
+
+def permutation_p(values, flags):
+    """Exact two-sided permutation test on the El Niño-start minus other-years mean difference.
+
+    Every way of choosing len(El Niño years) of the years is enumerated (2,042,975 for 9 of 25);
+    p is the share whose mean difference is at least as far from zero as the observed one.
+    It treats years as exchangeable, so it does not adjust for autocorrelation.
+    """
+    n, k = len(values), sum(flags)
+    if (n, k) not in _COMBOS:
+        from itertools import combinations
+        _COMBOS[(n, k)] = np.array(list(combinations(range(n), k)), dtype=np.int16)
+    x = np.asarray(values, dtype=float)
+    chosen = x[_COMBOS[(n, k)]].sum(axis=1)
+    diffs = chosen / k - (x.sum() - chosen) / (n - k)
+    observed = x[np.asarray(flags)].mean() - x[~np.asarray(flags)].mean()
+    return float(np.mean(np.abs(diffs) >= abs(observed) * (1 - 1e-12)))
+
+
+def p_record(p):
+    return float(f"{p:.3g}")
+
+
+def enso_comparison(values, flags, mean, test=True):
     enso = [v for v, flag in zip(values, flags, strict=True) if flag]
     other = [v for v, flag in zip(values, flags, strict=True) if not flag]
     enso_mean, other_mean = math.fsum(enso) / len(enso), math.fsum(other) / len(other)
@@ -349,14 +403,16 @@ def enso_comparison(values, flags, mean):
         raise ValueError("Other-year mean must be positive")
     diff = 100 * (enso_mean / other_mean - 1)
     return {"mean_mm": enso_mean, "other_mean_mm": other_mean, "diff_pct": diff,
-            "below_mean": sum(v < mean for v in enso), "group_size": len(enso), "other_size": len(other)}
+            "below_mean": sum(v < mean for v in enso), "group_size": len(enso), "other_size": len(other),
+            "p": permutation_p(values, flags) if test else None}
 
 
 def comparison_record(enso):
     return {"mean_mm": rnd(enso["mean_mm"], 1), "other_mean_mm": rnd(enso["other_mean_mm"], 1),
             "diff_pct": rnd(enso["diff_pct"], 3), "direction": direction(enso["diff_pct"]),
             "below_mean": enso["below_mean"], "group_size": enso["group_size"],
-            "other_size": enso["other_size"]}
+            "other_size": enso["other_size"], "p": p_record(enso["p"]),
+            "meets_threshold": enso["p"] < ALPHA}
 
 
 def series_record(values, jan_apr, flags):
@@ -527,6 +583,7 @@ def temperature_record(values, flags, unit="c"):
             f"sen_{unit}_decade": rnd(10 * slope, 4), f"sen_mid_{unit}": rnd(mid, 4),
             "p": serial_p(p), "direction": direction(slope), "meets_threshold": p < ALPHA,
             f"enso_diff_{unit}": rnd(gap, 4), "enso_direction": direction(gap),
+            "enso_p": p_record(permutation_p(values, flags)),
             "refit": {"start": 2001, "end": 2019, f"sen_{unit}_decade": rnd(10 * refit_slope, 4),
                       "p": serial_p(refit_p), "direction": direction(refit_slope),
                       "meets_threshold": refit_p < ALPHA}}
@@ -647,7 +704,7 @@ def build_artifact(raws, records, annual, jan_apr, cube_record, month_shares):
         mean = math.fsum(values) / len(values)
         slope, mid, s, p = trend(values)
         jan_apr_mean = math.fsum(jan_apr[index]) / len(YEARS)
-        enso = enso_comparison(jan_apr[index], flags, jan_apr_mean)
+        enso = enso_comparison(jan_apr[index], flags, jan_apr_mean, test=False)
         cell_stats.append({"mean": mean, "jan_apr_mean": jan_apr_mean, "slope": slope, "mid": mid, "p": p, "enso": enso["diff_pct"],
                            "classes": trend_classes(slope, p)})
 
@@ -678,11 +735,11 @@ def build_artifact(raws, records, annual, jan_apr, cube_record, month_shares):
     pantabangan_values = annual[pantabangan]
     pantabangan_mean = math.fsum(pantabangan_values) / len(pantabangan_values)
     pantabangan_2024 = pantabangan_values[YEARS.index(2024)]
-    pantabangan_enso = enso_comparison(pantabangan_values, flags, pantabangan_mean)["diff_pct"]
+    pantabangan_enso = enso_comparison(pantabangan_values, flags, pantabangan_mean, test=False)["diff_pct"]
     pantabangan_jan_apr = jan_apr[pantabangan]
     pantabangan_jan_apr_mean = math.fsum(pantabangan_jan_apr) / len(YEARS)
     pantabangan_jan_apr_2024 = pantabangan_jan_apr[YEARS.index(2024)]
-    pantabangan_jan_apr_enso = enso_comparison(pantabangan_jan_apr, flags, pantabangan_jan_apr_mean)["diff_pct"]
+    pantabangan_jan_apr_enso = enso_comparison(pantabangan_jan_apr, flags, pantabangan_jan_apr_mean, test=False)["diff_pct"]
     raw_national = national["_raw"]
     swing_range = raw_national["wettest"] - raw_national["driest"]
     trend_change = abs(raw_national["slope"]) * (YEARS[-1] - YEARS[0])
@@ -765,11 +822,13 @@ def build_artifact(raws, records, annual, jan_apr, cube_record, month_shares):
         "boundaries": boundaries,
         "enso": {"rule": "DJF ONI >= +0.5 °C", "threshold": ENSO_THRESHOLD, "oni_djf": oni,
                  "began_el_nino": flags, "years": [y for y, flag in zip(YEARS, flags, strict=True) if flag],
+                 "permutations": math.comb(len(flags), sum(flags)),
                  "source": {**records["oni"], "provider": "NOAA Climate Prediction Center"}},
         "legend": legend,
         "national": strip_raw(national),
         "farm": farm,
         "climate": climate_record,
+        "news": news_record(region_records, national),
         "air": air,
         "regions": [strip_raw(record) for record in region_records],
         "cells": cells,

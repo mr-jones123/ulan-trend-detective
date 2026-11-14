@@ -21,6 +21,15 @@ const gY = (pct: number) => (50 - (50 * pct) / gExtent).toFixed(2);
 const gPath = (values: readonly number[]) => values.map((v, i) => `${i === 0 ? 'M' : 'L'}${i * 10 + 5} ${gY(v)}`).join(' ');
 const gYears = artifact.enso.began_el_nino.map((flag, i) => ({ flag, year: artifact.period.start + i, x: i * 10 }));
 const cellCount = fmt.count(artifact.cells.count);
+const nat = artifact.national;
+const ensoJA = nat.jan_apr.enso;
+const news2024 = artifact.news.events.find((e) => e.year === 2024)!;
+const newsDry = news2024.regions.filter((r) => r.jan_apr_anomaly_pct <= -artifact.news.near_normal_pct).length;
+const regionsMeeting = artifact.regions.filter((r) => r.jan_apr.enso.meets_threshold).length;
+const airTrend = artifact.air.national.annual;
+const allOr = (count: number, total: number, noun: string) => (count === total ? `all ${total} ${noun}` : `${count} of the ${total} ${noun}`);
+const ensoLede = `In years that began in El Niño, January to April rain averaged ${fmt.pct(ensoJA.diff_pct)} ${ensoJA.direction === 'down' ? 'less' : 'more'} than in other years. ${allOr(ensoJA.below_mean, ensoJA.group_size, 'of those years').replace(/^a/, 'A')} fell below average, ${allOr(artifact.facts.regions_enso_less, artifact.regions.length, 'regions')} were drier, and ${regionsMeeting} of ${artifact.regions.length} regions meet the test on their own. Chance alone gives a gap that large with ${fmt.pExact(ensoJA.p)}.`;
+const trendLede = `The slow trends are different: national rain ${nat.direction === 'up' ? 'rose' : nat.direction === 'down' ? 'fell' : 'held level'} ${fmt.pct(nat.sen_pct_decade)} per decade, ${nat.meets_threshold ? `and that meets the test (${fmt.pExact(nat.p)}).` : `but with ${fmt.pExact(nat.p)}, 25 years cannot yet tell it from chance.`}`;
 const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elninolanina/EN_Advisory_5.pdf';
 const description = `${claims['standfirst-enso'].text} ${claims['standfirst-trend'].text} NASA IMERG rainfall over the Philippines, 2001-2025.`;
 const ensoClasses = legendModel(artifact, 'enso', artifact.period.start).classes;
@@ -135,6 +144,26 @@ const januarySquares = artifact.period.years.map((year, index) => {
       </section>
 
       <Story artifact={artifact} claims={claims} />
+
+      <section class="why" id="why" aria-labelledby="why-heading">
+        <p class="why-kicker">Why it matters</p>
+        <h2 id="why-heading" class="why-heading">The strongest signal in {artifact.period.years.length} years of NASA rain over the Philippines is El Niño’s.</h2>
+        <p class="why-lede">{ensoLede} {trendLede} Telling those two kinds of result apart is the whole job of a trend detective.</p>
+        <div class="why-columns">
+          <article>
+            <h3>For students</h3>
+            <p>Pick a variable, a place and a time window, and get the same tests scientists use: Sen’s slope for how fast, Mann-Kendall and permutation tests for whether it is real. The page shows a strong signal, a trend that could be chance, and a result that fell apart under checking, side by side. A k-means model you can step through shows machine learning finding PAGASA’s four climate types from rain data alone.</p>
+          </article>
+          <article>
+            <h3>For scientists</h3>
+            <p>Every NASA response is pinned with its URL, retrieval time and SHA-256 hash, so the analysis rebuilds offline, byte for byte. IMERG agrees with NASA Giovanni (r = {artifact.provenance.giovanni.r.toFixed(3)}), the data rediscover known climate structure, and results that do not survive checks are reported, not dropped. It shows how {cellCount} 0.1° rain squares, MODIS greenness and MERRA-2 temperature can track El Niño’s farm impacts region by region.</p>
+          </article>
+          <article>
+            <h3>For farms and planners</h3>
+            <p>El Niño’s dry-season signal is large, consistent and visible a season ahead in the ocean index. In 2024, {newsDry} of the {news2024.regions.length} regions the Department of Agriculture reported as damaged had at least {artifact.news.near_normal_pct}% less January to April rain in this record, and crops were measurably less green at all {artifact.farm.sites.length} sampled farm sites. Air temperature changed {airTrend.sen_c_decade > 0 ? '+' : ''}{airTrend.sen_c_decade.toFixed(2)} °C per decade nationally, a trend that {airTrend.meets_threshold ? 'meets' : 'does not meet'} the test.</p>
+          </article>
+        </div>
+      </section>
 
       <section class="method" id="method" aria-labelledby="method-heading">
         <h2 id="method-heading" class="visually-hidden">Method</h2>

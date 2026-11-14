@@ -1,0 +1,84 @@
+{
+  "schema": "news-farm-damage-v1",
+  "note": "Department of Agriculture (DA) El Niño farm-damage reports as published by news outlets, gathered by hand on 2026-11-14 to compare with the satellite record. Only short quotes are kept; read the full articles at the URLs. The sha256 is of the page HTML as fetched that day and documents what was read; news pages change, so it will not match a later fetch. Figures are early-season bulletins, not final totals.",
+  "retrieved": "2026-11-14",
+  "events": [
+    {
+      "year": 2024,
+      "reports": [
+        {
+          "outlet": "Philstar",
+          "title": "El Niño agriculture damage climbs to P6.3 billion",
+          "url": "https://www.philstar.com/nation/2024/05/12/2354398/el-nio-agriculture-damage-climbs-p63-billion",
+          "published": "2024-05-12",
+          "sha256": "b4249bcd197a8fadfe349ba253d61849ee120a84ad40c8c56f42b61a5ed02732",
+          "quote": "DA spokesman Arnel de Mesa said Mimaropa remains the most affected region, with damage placed at P1.7 billion followed by Western Visayas, with P1.5 billion, and Cordillera Administrative Region, P800 million."
+        },
+        {
+          "outlet": "BusinessWorld",
+          "title": "El Niño farm damage hits P5.9 billion",
+          "url": "https://bworldonline.com/economy/2024/05/02/592500/el-nino-farm-damage-hits-p5-9-billion/",
+          "published": "2024-05-02",
+          "sha256": "df2964e64408ac055f65692b0785509f88c02e3a2b4f16511e94f7969a549a6f",
+          "quote": "The hardest-hit province was Iloilo, where losses were valued at between P500 million and P600 million, followed by Palawan at P350 million to P500 million."
+        },
+        {
+          "outlet": "GMA News",
+          "title": "El Niño damage to agriculture nears P4 billion — DA",
+          "url": "https://www.gmanetwork.com/news/topstories/nation/904175/el-nino-damage-to-agri-nears-p4-billion-da/story/",
+          "published": "2024-04-19",
+          "sha256": "b1a3059ed3103178ad28398fadaa1d32703c49bd69e254e75c9f6fa626b7265a",
+          "quote": "In its El Niño bulletin, the DA said the estimated damage to the farm sector in 11 regions — Cordillera Administrative Region, Ilocos Region, Cagayan Valley, Central Luzon, Calabarzon, MIMAROPA, Bicol Region, Western Visayas, Zamboanga Peninsula, Davao Region, and Soccsksargen — stood at P3.94 billion, affecting 73,713 farmers and fisherfolk as of April 16."
+        }
+      ],
+      "regions": [
+        { "id": "mimaropa", "reported": "Most affected region, P1.7 billion; Palawan second-hardest-hit province" },
+        { "id": "western-visayas", "reported": "Second most affected, P1.5 billion; Iloilo hardest-hit province" },
+        { "id": "car", "reported": "Third most affected, P800 million" },
+        { "id": "ilocos-region", "reported": "Listed among 11 damaged regions, 16 April" },
+        { "id": "cagayan-valley", "reported": "Listed among 11 damaged regions, 16 April" },
+        { "id": "central-luzon", "reported": "Listed among 11 damaged regions, 16 April" },
+        { "id": "calabarzon", "reported": "Listed among 11 damaged regions, 16 April" },
+        { "id": "bicol-region", "reported": "Listed among 11 damaged regions, 16 April" },
+        { "id": "zamboanga-peninsula", "reported": "Listed among 11 damaged regions, 16 April" },
+        { "id": "davao-region", "reported": "Listed among 11 damaged regions, 16 April" },
+        { "id": "soccsksargen", "reported": "Listed among 11 damaged regions, 16 April" }
+      ]
+    },
+    {
+      "year": 2019,
+      "reports": [
+        {
+          "outlet": "Rappler",
+          "title": "Agricultural damage caused by El Niño reaches P464 million",
+          "url": "https://www.rappler.com/business/225473-el-nino-agricultural-damage-march-11-2019/",
+          "published": "2019-03-11",
+          "sha256": "520632e4a7185fe331e02dfe0599311a3b678f184ae4b9c5c4effce76b39cf2f",
+          "quote": "The affected regions are: Mimaropa, Zamboanga Peninsula, Northern Mindanao, Davao Region, Soccsksargen, Bangsamoro Autonomous Region in Muslim Mindanao"
+        },
+        {
+          "outlet": "Rappler",
+          "title": "Agricultural damage from El Niño rises to P1.33 billion",
+          "url": "https://www.rappler.com/business/226170-el-nino-agricultural-damage-march-19-2019/",
+          "published": "2019-03-20",
+          "sha256": "7da1b7d7369044637226f6a2f52b5cdeb6e77299cfab9eee5279d377ef545bad",
+          "quote": "According to the report, however, Northern Mindanao has been bearing the brunt of El Niño."
+        }
+      ],
+      "regions": [
+        { "id": "northern-mindanao", "reported": "Bearing the brunt of El Niño, 19 March" },
+        { "id": "mimaropa", "reported": "Listed as affected, 11 March" },
+        { "id": "zamboanga-peninsula", "reported": "Listed as affected, 11 March" },
+        { "id": "davao-region", "reported": "Listed as affected, 11 March" },
+        { "id": "soccsksargen", "reported": "Listed as affected, 11 March" },
+        { "id": "armm", "reported": "Listed as affected (Bangsamoro), 11 March" }
+      ]
+    }
+  ],
+  "research": {
+    "author": "Gay Jane P. Perez",
+    "title": "Agricultural drought in the Philippines associated with the 2019 El Niño",
+    "url": "https://lcluc.umd.edu/sites/default/files/lcluc_documents/Dr.%20GAY%20JANE%20P.%20PEREZ.pdf",
+    "quote": "Drought drivers agree with reported damaged area. VHI successfully represents drought affected area."
+  }
+}
