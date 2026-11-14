@@ -71,7 +71,7 @@ export const CLAIM_IDS = [
   'enso-region', 'pantabangan-enso', 'pantabangan-2024', 'trend', 'trend-where', 'trend-where-other',
   'trend-region', 'next-year', 'audit', 'season-window', 'pantabangan-context', 'pantabangan-limit',
   'comparison-limit', 'method-totals', 'method-weights', 'method-enso', 'method-limits',
-  'farm-rain', 'farm-day', 'farm-night', 'farm-sites', 'farm-drift', 'farm-context', 'farm-limit', 'farm-chart', 'method-farm', 'giovanni', 'farm-night-air', 'farm-green', 'farm-green-trend', 'farm-green-chart',
+  'farm-rain', 'farm-day', 'farm-night', 'farm-sites', 'farm-drift', 'farm-context', 'farm-limit', 'farm-chart', 'method-farm', 'giovanni', 'farm-night-air', 'farm-green', 'farm-green-trend', 'farm-green-chart', 'climate', 'climate-enso', 'climate-method',
 ] as const;
 export type ClaimId = (typeof CLAIM_IDS)[number];
 
@@ -289,6 +289,7 @@ export function buildClaims(a: Artifact): Claims {
     'farm-drift': { id: 'farm-drift', verdict: trendVerdict(refit), direction: 'none',
       text: `Terra's orbit drift after 2020 moved its overpasses earlier. Refitting only 2001-2019 gives ${refitChange} (${fmt.pSameSideOfAlpha(refit.p, refit.meets_threshold, alpha)}), which ${refit.meets_threshold ? 'meets' : 'does not meet'} the test. The full-record result cannot separate climate from changing observation time.` },
     ...greenClaims(farm, alpha),
+    ...climateClaims(a),
     'farm-night-air': nightAirClaim(farm.night, farm.night_air, alpha),
     'farm-context': { id: 'farm-context', verdict: 'context-only', direction: 'mixed',
       text: 'Peng and colleagues reported in 2004 that dry-season rice grain yield at IRRI in Los Baños fell about 10% per 1 °C of higher minimum air temperature. Their January to April field study is context, not a conversion from these satellite observations to Philippine yield loss.' },
@@ -330,6 +331,28 @@ export function buildClaims(a: Artifact): Claims {
   };
   assertClaims(claims);
   return claims;
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function climateClaims(a: Artifact): Pick<Claims, 'climate' | 'climate-enso' | 'climate-method'> {
+  const c = a.climate;
+  const kWord = ['zero', 'one', 'two', 'three', 'four', 'five', 'six'][c.k] ?? String(c.k);
+  const groups = c.groups.map((g) => `Type ${g.pagasa_type} gets ${g.jan_apr_share_pct.toFixed(1)}% from January to April and peaks in ${MONTHS[g.wettest_month - 1]}`);
+  const gaps = c.groups.map((g) => `Type ${g.pagasa_type} ${fmt.signedPct(g.enso.diff_pct)}`);
+  const directions = new Set(c.groups.map((g) => g.enso.direction));
+  const allDown = directions.size === 1 && directions.has('down');
+  const wettest = c.groups.reduce((x, y) => (y.jan_apr_share_pct > x.jan_apr_share_pct ? y : x));
+  return {
+    climate: { id: 'climate', verdict: 'found', direction: 'none', heading: `The data found ${kWord} rain calendars`,
+      text: `We gave a k-means algorithm each square's average year as 12 monthly shares of its rain, and nothing about where the square is. It sorted the ${fmt.count(a.cells.count)} squares into ${kWord} groups that resemble the four climate types PAGASA uses. ${fmt.list(groups)}.` },
+    'climate-enso': { id: 'climate-enso', verdict: allDown ? 'all-down' : 'mixed', direction: allDown ? 'down' : 'mixed',
+      text: allDown
+        ? `El Niño-start years had less January to April rain in every group: ${fmt.list(gaps)}. For Type ${wettest.pagasa_type} those months carry ${wettest.jan_apr_share_pct.toFixed(1)}% of the year, so the same El Niño takes away part of its wet season, not its dry one.`
+        : `The January to April El Niño gap by group: ${fmt.list(gaps)}.` },
+    'climate-method': { id: 'climate-method', verdict: 'fixed', direction: 'none',
+      text: `k-means groups the shape of the year, not its total. We asked for ${kWord} groups to compare with PAGASA's four types; the algorithm does not choose that number. It starts from the square with the largest January to April share, adds the square farthest from the chosen centres until there are ${kWord}, then alternates assigning squares and moving centres. It settled after ${c.iterations} rounds. The group edges are the data's own and differ from PAGASA's map in places.` },
+  };
 }
 
 function greenClaims(farm: Artifact['farm'], alpha: number): Pick<Claims, 'farm-green' | 'farm-green-trend' | 'farm-green-chart'> {

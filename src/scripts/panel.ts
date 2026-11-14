@@ -1,6 +1,6 @@
 import { chartHtml } from '../lib/chart';
 import { explorerLegend } from '../lib/colour';
-import { ensoText, placeChart, placeOf, trendText, type Place } from '../lib/place';
+import { ensoText, modeText, placeChart, placeOf, trendText, type Place } from '../lib/place';
 import type { Artifact, CellGrid } from '../lib/rainfall';
 import { fmt } from '../lib/story';
 import { COUNTRY, demoSteps, focusKey, type ViewState } from '../lib/view';
@@ -165,7 +165,7 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
       ds.demo = state.demo ? `${state.demo.id}:${state.demo.step}` : '';
       variableSelect.value = state.variable;
       windowSelect.value = state.window;
-      windowSelect.disabled = isFarm(state.variable) || state.mode === 'enso' || state.mode === 'farm';
+      windowSelect.disabled = isFarm(state.variable) || state.mode === 'enso' || state.mode === 'farm' || state.mode === 'climate';
       regionSelect.disabled = isFarm(state.variable);
       siteSelect.closest<HTMLElement>('[data-site-field]')!.hidden = !isFarm(state.variable);
       one<HTMLElement>(root, '[data-country]').textContent = isFarm(state.variable) ? 'Mean of 12 sites' : 'Whole country';
@@ -178,7 +178,7 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
       if (state.demo) {
         const steps = demoSteps({ artifact: a, pantabangan: grid.fromId(a.facts.focus.pantabangan_cell)! }, state.demo.id);
         const place = placeFor(state);
-        demoText.textContent = `Step ${state.demo.step + 1} of ${steps.length}. ${steps[state.demo.step]!.text} ${place.heading}. ${state.mode === 'enso' ? ensoText(place) : trendText(a, place)}`;
+        demoText.textContent = `Step ${state.demo.step + 1} of ${steps.length}. ${steps[state.demo.step]!.text} ${place.heading}. ${modeText(a, place, state.mode)}`;
         demoPrev.disabled = state.demo.step === 0;
         demoNext.disabled = state.demo.step === steps.length - 1;
       }
@@ -216,7 +216,7 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
         const link = document.createElement('a');
         link.href = '#explore';
         link.textContent = 'Open in the explorer';
-        const summary = state.mode === 'enso' || state.mode === 'farm' ? ensoText(place) : trendText(a, place);
+        const summary = modeText(a, place, state.mode);
         readout.append(strong, ` ${summary} `, link);
       }
     },

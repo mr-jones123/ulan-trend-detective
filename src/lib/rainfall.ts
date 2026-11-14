@@ -94,6 +94,12 @@ const greenness = z.object({
   }),
 });
 
+const climateGroup = z.object({
+  pagasa_type: z.enum(['I', 'II', 'III', 'IV']), count: z.int().positive(), land_share: z.number().min(0).max(1),
+  month_share_pct: z.array(z.number().min(0).max(100)).length(12), jan_apr_share_pct: z.number().min(0).max(100),
+  wettest_month: z.int().min(1).max(12), enso: ensoComparison,
+});
+
 export const rainfallSchema = z.object({
   schema: z.literal('ph-rain-imerg-v4'),
   period: z.object({ start: z.literal(FIRST_YEAR), end: z.literal(2025), years: z.array(z.int()).length(YEAR_COUNT) }),
@@ -148,6 +154,8 @@ export const rainfallSchema = z.object({
       day: temperature, night: temperature, green: greenness,
     })).length(12),
   }),
+  climate: z.object({ k: z.literal(4), iterations: z.int().positive(), inertia: z.number().positive(),
+    groups: z.array(climateGroup).length(4) }),
   regions: z.array(region).length(17),
   cells: z.object({
     count: z.int().positive(),
@@ -169,6 +177,8 @@ export const rainfallSchema = z.object({
     meets: z.array(z.union([z.literal(0), z.literal(1)])),
     jan_apr_enso_diff_pct: z.array(z.number()),
     jan_apr_enso_sign: z.array(sign),
+    climate: z.array(z.int().min(0).max(3)),
+    month_share: z.array(z.int().min(0).max(10000)),
   }),
   facts: z.object({
     shares,
@@ -229,9 +239,10 @@ export const rainfallSchema = z.object({
   const { cells } = data;
   const perCell = [cells.row, cells.col, cells.region, cells.land_pct, cells.weight, cells.mean_mm, cells.sen_mm_decade,
     cells.sen_pct_decade, cells.sen_mid_mm, cells.p, cells.trend_sign, cells.meets,
-    cells.jan_apr_mean_mm, cells.jan_apr_enso_diff_pct, cells.jan_apr_enso_sign, cells.cropland_pct];
+    cells.jan_apr_mean_mm, cells.jan_apr_enso_diff_pct, cells.jan_apr_enso_sign, cells.cropland_pct, cells.climate];
   if (perCell.some((column) => column.length !== cells.count)
-    || [cells.annual_mm, cells.jan_apr_mm].some((column) => column.length !== cells.count * YEAR_COUNT)) {
+    || [cells.annual_mm, cells.jan_apr_mm].some((column) => column.length !== cells.count * YEAR_COUNT)
+    || cells.month_share.length !== cells.count * 12) {
     context.addIssue({ code: 'custom', path: ['cells'], message: 'Cell columns must match the cell count' });
   }
   for (let i = 1; i < cells.count; i += 1) {

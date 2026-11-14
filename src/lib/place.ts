@@ -1,4 +1,5 @@
 import type { ChartInput } from './chart';
+import { CLIMATE_NAMES } from './colour';
 import { fmt, regionById } from './story';
 import type { Artifact, CellGrid, Direction, Series } from './rainfall';
 import type { Focus, Mode } from './view';
@@ -25,6 +26,7 @@ export type Place = {
   readonly landPct: number | null;
   readonly croplandPct: number | null;
   readonly kind: Focus['kind'];
+  readonly climate: number | null;
 };
 
 const SIGN_DIRECTION: Record<-1 | 0 | 1, Direction> = { [-1]: 'down', 0: 'zero', 1: 'up' };
@@ -36,7 +38,7 @@ function fromSeries(key: string, heading: string, kind: Focus['kind'], s: Series
     annual: s.annual_mm, mean: s.mean_mm, senPerDecade: trend.sen_mm_decade, pctDecade: trend.sen_pct_decade,
     janApr: s.jan_apr.mm, janAprMean: s.jan_apr.mean_mm,
     mid: trend.sen_mid_mm, p: trend.p, meets: trend.meets_threshold,
-    ensoDiffPct: s.jan_apr.enso.diff_pct, ensoDirection: s.jan_apr.enso.direction, landPct: null, croplandPct: null,
+    ensoDiffPct: s.jan_apr.enso.diff_pct, ensoDirection: s.jan_apr.enso.direction, landPct: null, croplandPct: null, climate: null,
   };
 }
 
@@ -54,7 +56,7 @@ export function placeOf(a: Artifact, grid: CellGrid, focus: Focus, variable: Var
       annual: s.c, janApr: s.c, mean: s.mean_c, janAprMean: s.mean_c,
       senPerDecade: s.sen_c_decade, pctDecade: 0, mid: s.sen_mid_c, p: s.p, meets: s.meets_threshold,
       ensoDiffPct: enso.enso_diff_c, ensoDirection: enso.enso_direction, landPct: null, croplandPct: null,
-      refit: 'refit' in s ? s.refit as Artifact['farm']['day']['refit'] : null,
+      refit: 'refit' in s ? s.refit as Artifact['farm']['day']['refit'] : null, climate: null,
     };
   }
   switch (focus.kind) {
@@ -79,7 +81,7 @@ export function placeOf(a: Artifact, grid: CellGrid, focus: Focus, variable: Var
         janApr: grid.janApr(i), janAprMean: c.jan_apr_mean_mm[i] ?? 0,
         ensoDiffPct: c.jan_apr_enso_diff_pct[i] ?? 0,
         ensoDirection: SIGN_DIRECTION[c.jan_apr_enso_sign[i] ?? 0], landPct: c.land_pct[i] ?? null,
-        croplandPct: c.cropland_pct[i] ?? null,
+        croplandPct: c.cropland_pct[i] ?? null, climate: c.climate[i] ?? null,
       };
     }
     case 'air-cell':
@@ -98,6 +100,17 @@ export function trendText(a: Artifact, place: Place): string {
     ? `${fmt.signedPct(place.pctDecade)} (${place.senPerDecade.toFixed(2)} mm) per decade`
     : `${signedC(place.senPerDecade)} per decade`;
   return `${amount}, ${fmt.pSameSideOfAlpha(place.p, place.meets, a.alpha)}, ${place.meets ? 'meets' : 'does not meet'} the unadjusted p < 0.05 test.`;
+}
+
+export function climateText(a: Artifact, place: Place): string {
+  if (place.climate === null) return 'Select a square to see which of the four rain calendars it belongs to.';
+  const g = a.climate.groups[place.climate]!;
+  return `Rain calendar: ${CLIMATE_NAMES[g.pagasa_type].toLowerCase()}, like PAGASA Type ${g.pagasa_type}. Its group gets ${g.jan_apr_share_pct.toFixed(1)}% of the year's rain from January to April.`;
+}
+
+export function modeText(a: Artifact, place: Place, mode: Mode): string {
+  if (mode === 'climate') return climateText(a, place);
+  return mode === 'enso' || mode === 'farm' ? ensoText(place) : trendText(a, place);
 }
 
 export function ensoText(place: Place): string {

@@ -2,13 +2,14 @@ import type { StyleSpecification } from '@maplibre/maplibre-gl-style-spec';
 import { fallbackStyle, STYLE_TIMEOUT_MS, STYLE_URL, transformPositron } from '../lib/basemap';
 import { cellAt, DATA_URL, decodeCells, parseArtifact, regionId, type Artifact, type AirIndex, type CellGrid, type CellIndex, type SiteIndex } from '../lib/rainfall';
 import { fmt } from '../lib/story';
-import { ensoText, trendText } from '../lib/place';
+import { modeText } from '../lib/place';
 import { focusAt, isFarm, isVariable, VARIABLES, windowLabel } from '../lib/variable';
 import {
   CHAPTER_IDS, COUNTRY, MODES, initialState, reduce,
   type Action, type ChapterId, type Context, type Focus, type Mode, type Selection, type ViewState,
 } from '../lib/view';
 import { createMap, type RainMap } from './map';
+import { createKmeansWidget } from './kmeans-widget';
 import { createPanel, type Panel } from './panel';
 
 const root = document.querySelector<HTMLElement>('[data-rainfall-app]');
@@ -150,6 +151,8 @@ function run(app: HTMLElement, a: Artifact, stylePromise: Promise<{ style: Style
   const initialCameraRequest = state.camera.request;
   let map: RainMap | null = null;
   let playTimer: number | undefined;
+  const kmeansRoot = app.querySelector<HTMLElement>('[data-kmeans]');
+  if (kmeansRoot) createKmeansWidget(kmeansRoot, a, (labels) => map?.paintGroups(labels));
   let announceTimer: number | undefined;
   let pendingGoto: { chapter: ChapterId; until: number } | null = null;
 
@@ -192,7 +195,7 @@ function run(app: HTMLElement, a: Artifact, stylePromise: Promise<{ style: Style
     window.clearTimeout(announceTimer);
     announceTimer = window.setTimeout(() => {
       const place = panel.place(state);
-      panel.announce(`${place.heading}. ${state.mode === 'enso' ? ensoText(place) : trendText(a, place)}`);
+      panel.announce(`${place.heading}. ${modeText(a, place, state.mode)}`);
     }, ANNOUNCE_MS);
   }
 

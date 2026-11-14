@@ -137,6 +137,14 @@ The first version of this map used NASA POWER's MERRA-2 `PRECTOTCORR`. At 121.25
 
 The builder recomputes this audit from the two preserved point responses in `data/sources/audit/` and stores it as `provenance.source_audit`. The "Why we use IMERG" disclosure on the page shows the 25-year table from that record.
 
+## Rain calendars (k-means)
+
+`scripts/climate.py` describes every IMERG square by its average 2001-2025 year as 12 monthly shares of its rain, stored as integers per ten thousand in `cells.month_share`. k-means with k = 4 groups those shapes, not totals. Initialisation is deterministic: the square with the largest January to April share, then repeatedly the square farthest from the chosen centres (maximin). Each round assigns squares to the nearest centre by squared distance and moves centres to their members' mean, until no square changes group. Groups are ordered by January to April share and named after the PAGASA climate type they resemble; the builder fails if the driest group no longer peaks in June to September or the wettest no longer peaks in November to January. Each group's El Niño-start comparison uses its land-weighted January to April series.
+
+`src/lib/kmeans.ts` repeats the same arithmetic in the same order. The chapter's widget steps it live over all 3,735 squares and repaints the map through MapLibre feature state; Reset with k = 4 reproduces the published groups, and `tests/kmeans.test.ts` checks that square by square.
+
+At build time it settled after 35 rounds, inertia 9.64. January to April shares: Type I 6.1%, Type III 12.9%, Type IV 24.6%, Type II 31.8%. El Niño-start January to April gaps: −62.9%, −65.8%, −55.1% and −60.4%. k = 4 is chosen to compare with PAGASA's four types; the algorithm does not choose it, and group edges differ from PAGASA's map in places.
+
 ## Farm greenness and night air
 
 **Greenness.** `uv run --frozen scripts/modis.py --ndvi` reads MOD13Q1 NDVI and its pixel-reliability band for the same 25 km windows as the surface temperatures, January to April composites (days 001-113, every 16 days). A 250 m pixel counts as cropland when its parent 500 m MCD12Q1 pixel `(ix // 2, iy // 2)` is class 12. A composite keeps reliability 0 or 1 pixels and is retained only when at least 30% of the site's cropland pixels are valid. Site-years are means of retained composites; the 12-site series is an equal-weight mean. NDVI is also from Terra, so the 2001-2019 refit is reported beside the full-record trend.
@@ -199,4 +207,5 @@ MERRA-2 air temperature and MODIS clear-sky surface temperature measure differen
 - `src/components/Story.astro` and `src/pages/index.astro` own the markup and fixed copy. `src/styles/global.css` owns the layout.
 - `tests/test_build_rainfall.py` covers Sen and Mann-Kendall against the independent point series, ties, flat series, leap days, missing days, fill values, weighted means, same-calendar-year January to April aggregation, seasonal versus annual El Niño comparisons, the El Niño threshold, edge containment, legend breaks, tied regions, sinusoidal geolocation, nested MODIS pixels, cropland and composite-validity thresholds, site spacing and temperature refits.
 - `tests/test_merra2.py` covers native-cell coverage, bad source responses, overlapping requests, calendar-day weighting, leap years, coastline weights, unrounded aggregate trends, and pinned offline replay.
+- `tests/kmeans.test.ts` checks that the browser k-means reproduces the published groups and round count.
 - `tests/view.test.ts` covers variable normalization, playback, demo transitions, spatial coverage, unavailable per-cell seasonal trends, and malformed artifact rejection.

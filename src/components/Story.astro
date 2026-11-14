@@ -1,5 +1,6 @@
 ---
 import { chartHtml } from '../lib/chart';
+import { CLIMATE, CLIMATE_NAMES } from '../lib/colour';
 import { legendModel } from '../lib/colour';
 import { farmChart, greenChart, placeChart, placeOf } from '../lib/place';
 import { decodeCells, DATA_URL, type Artifact } from '../lib/rainfall';
@@ -26,6 +27,7 @@ const HEADINGS: Record<ChapterId, string> = {
   driest: claims.driest.heading ?? '',
   wettest: claims.wettest.heading ?? '',
   swing: claims.swing.heading ?? '',
+  climate: claims.climate.heading ?? '',
   enso: claims.enso.heading ?? '',
   'enso-region': claims['enso-region'].heading ?? '',
   pantabangan: 'Pantabangan, 2023 and 2024',
@@ -43,6 +45,7 @@ const CLAIMS_BY_CHAPTER: Record<ChapterId, readonly Claim[]> = {
   driest: [claims.driest],
   wettest: [claims.wettest],
   swing: [claims.swing],
+  climate: [claims.climate],
   enso: [claims.enso, claims['season-window']],
   'enso-region': [claims['enso-region']],
   pantabangan: [],
@@ -58,6 +61,7 @@ const CLAIMS_BY_CHAPTER: Record<ChapterId, readonly Claim[]> = {
 const MODE_LABELS: Record<Mode, string> = {
   mean: 'Average', year: 'One year', enso: 'El Niño, January to April', trend: '25-year change',
   farm: 'Farmland',
+  climate: 'Rain calendar',
 };
 const chapters = CHAPTER_IDS.map((id, index) => {
   const next = CHAPTER_IDS[index + 1];
@@ -71,6 +75,8 @@ const pValue = fmt.pSameSideOfAlpha(n.p, n.meets_threshold, a.alpha).replace(/^p
 const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elninolanina/EN_Advisory_5.pdf';
 const air = a.air.national.annual;
 const opposite = a.regions.filter((r) => r.direction !== 'zero' && r.jan_apr.direction !== 'zero' && r.direction !== r.jan_apr.direction);
+const calendarMax = Math.max(...a.climate.groups.flatMap((g) => g.month_share_pct));
+const MONTH_LETTERS = 'JFMAMJJASOND';
 const trendResult = (s: Pick<typeof n, 'direction' | 'sen_mm_decade' | 'p' | 'meets_threshold'>) => `${s.direction === 'up' ? 'Rising' : s.direction === 'down' ? 'Falling' : 'Flat'}, ${s.sen_mm_decade.toFixed(2)} mm per decade, ${fmt.pSameSideOfAlpha(s.p, s.meets_threshold, a.alpha)}, ${s.meets_threshold ? 'meets' : 'does not meet'} the test`;
 ---
 <section class="story" id="story" aria-labelledby="story-heading"
@@ -144,6 +150,47 @@ const trendResult = (s: Pick<typeof n, 'direction' | 'sen_mm_decade' | 'p' | 'me
               <p data-claim={claims['pantabangan-enso'].id} data-verdict={claims['pantabangan-enso'].verdict} data-reveal>{claims['pantabangan-enso'].text}</p>
               <p data-claim={claims['pantabangan-2024'].id} data-verdict={claims['pantabangan-2024'].verdict} data-reveal>{claims['pantabangan-2024'].text}</p>
               <p class="note" data-claim={claims['pantabangan-limit'].id} data-verdict={claims['pantabangan-limit'].verdict} data-reveal>{claims['pantabangan-limit'].text} For drought advisories, follow <a href={PAGASA}>PAGASA</a>.</p>
+            </>
+          )}
+
+          {chapter.id === 'climate' && (
+            <>
+              <figure class="kmeans" data-kmeans data-reveal>
+                <div class="kmeans-controls">
+                  <label class="kmeans-k">k <input type="range" min="2" max="6" step="1" value={a.climate.k} data-k aria-label="Number of groups, k" /> <output data-k-out>{a.climate.k}</output></label>
+                  <button type="button" class="button" data-step>Step</button>
+                  <button type="button" class="button" data-run aria-pressed="false">Run</button>
+                  <button type="button" class="button" data-new>New centres</button>
+                  <button type="button" class="button" data-reset>Reset</button>
+                </div>
+                <dl class="kmeans-stats" aria-live="polite">
+                  <div><dt>Iteration</dt><dd data-iteration>0</dd></div>
+                  <div><dt>Next step</dt><dd data-next>Assign squares</dd></div>
+                  <div><dt>Inertia</dt><dd data-inertia>–</dd></div>
+                </dl>
+                <div class="kmeans-plot">
+                  <span class="kmeans-axis kmeans-axis-y">Share of the year's rain in June to September</span>
+                  <canvas data-kmeans-plot role="img"></canvas>
+                  <span class="kmeans-axis kmeans-axis-x">Share of the year's rain in January to April</span>
+                </div>
+                <figcaption>Each dot is one rain square; diamonds are group centres and dashed lines their path. Press Step to alternate between assigning every square to its nearest centre and moving each centre to the middle of its squares. The map repaints at each step. The algorithm compares all 12 months; this view shows two of them. Inertia is the total squared distance from squares to their centres, and it shrinks as the groups settle. Reset with k = 4 reproduces the published groups; New centres starts from random squares.</figcaption>
+              </figure>
+              <div class="calendars" data-reveal>
+                {a.climate.groups.map((g, i) => (
+                  <figure class="calendar">
+                    <figcaption><span class="calendar-swatch" style={`background:${CLIMATE[i]}`}></span>{CLIMATE_NAMES[g.pagasa_type]}, like Type {g.pagasa_type}</figcaption>
+                    <svg viewBox="0 0 120 48" role="img" aria-label={`${CLIMATE_NAMES[g.pagasa_type]}: monthly shares of the year's rain, January to December: ${g.month_share_pct.map((v) => `${v.toFixed(1)}%`).join(', ')}.`}>
+                      {g.month_share_pct.map((v, m) => (
+                        <rect x={m * 10 + 1} y={40 - (36 * v) / calendarMax} width="8" height={(36 * v) / calendarMax} fill={CLIMATE[i]} opacity={m < 4 ? 1 : 0.4} />
+                      ))}
+                      {[...MONTH_LETTERS].map((letter, m) => <text x={m * 10 + 5} y="47" text-anchor="middle">{letter}</text>)}
+                    </svg>
+                    <p>{g.jan_apr_share_pct.toFixed(1)}% in January to April · {fmt.count(g.count)} squares</p>
+                  </figure>
+                ))}
+              </div>
+              <p data-claim={claims['climate-enso'].id} data-verdict={claims['climate-enso'].verdict} data-reveal>{claims['climate-enso'].text}</p>
+              <p class="note" data-claim={claims['climate-method'].id} data-verdict={claims['climate-method'].verdict} data-reveal>{claims['climate-method'].text}</p>
             </>
           )}
 

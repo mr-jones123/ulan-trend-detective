@@ -6,6 +6,13 @@ import { VARIABLES, windowLabel, type Window } from './variable';
 export const DIVERGING = ['#8c510a', '#bf812d', '#dfc27d', '#f6e8c3', '#c7eae5', '#80cdc1', '#35978f', '#01665e'] as const;
 export const SEQUENTIAL = ['#eef3f1', '#cfe3df', '#a3cec7', '#6fb2ab', '#3f9294', '#1f6f79', '#0b4a5a'] as const;
 
+// Rain-calendar groups, ordered by January to April share: dry half-year (brown) to winter-wet (teal).
+// Extra colours serve the k-means demo when a reader asks for five or six groups.
+export const CLIMATE = ['#8c510a', '#d8a33b', '#5fa8a0', '#01665e', '#6c5b9e', '#c2477d'] as const;
+export const CLIMATE_NAMES: Record<'I' | 'II' | 'III' | 'IV', string> = {
+  I: 'Dry half-year', III: 'Short dry spell', IV: 'Even year-round', II: 'Wettest in winter',
+};
+
 export type LegendClass = { readonly colour: string; readonly label: string };
 export type LegendModel = {
   readonly title: string;
@@ -24,6 +31,7 @@ function breaksFor(a: Artifact, mode: Mode, window: Window = 'annual'): readonly
     case 'enso': return a.legend.enso_pct;
     case 'farm': return a.legend.enso_pct;
     case 'trend': return a.legend.trend_pct;
+    case 'climate': return [];
     default: {
       const unreachable: never = mode;
       return unreachable;
@@ -43,9 +51,15 @@ const TITLES: Record<Mode, (year: number) => string> = {
   enso: () => 'January to April, El Niño-start years against other years, %',
   farm: () => 'Cropland January to April rain, El Niño gap, %. Outlines are temperature sites.',
   trend: () => 'Change per decade, % of the average year',
+  climate: () => '',
 };
 
 export function legendModel(a: Artifact, mode: Mode, year: number, window: Window = 'annual'): LegendModel {
+  if (mode === 'climate') {
+    return { title: 'Rain calendar found by k-means, with the PAGASA type it resembles',
+      classes: a.climate.groups.map((g, i) => ({ colour: CLIMATE[i]!, label: `${CLIMATE_NAMES[g.pagasa_type]} (Type ${g.pagasa_type})` })),
+      ends: ['dry January to April', 'wet January to April'] };
+  }
   const breaks = breaksFor(a, mode, window);
   const classes = breaks.length - 1;
   const palette = paletteFor(mode, classes);
@@ -69,9 +83,15 @@ const PROPERTY: Record<Mode, ExpressionSpecification> = {
   enso: ['get', 'enso'],
   farm: ['get', 'enso'],
   trend: ['get', 'trend'],
+  climate: ['get', 'climate'],
 };
 
 export function colourExpression(a: Artifact, mode: Mode, window: Window = 'annual'): ExpressionSpecification {
+  if (mode === 'climate') {
+    // feature-state 'k' carries a live k-means run; otherwise the published group
+    return ['match', ['to-number', ['coalesce', ['feature-state', 'k'], ['get', 'climate']]],
+      ...CLIMATE.flatMap((colour, i): (number | string)[] => [i, colour]), '#cccccc'] as unknown as ExpressionSpecification;
+  }
   const breaks = breaksFor(a, mode, window);
   const palette = paletteFor(mode, breaks.length - 1);
   const stops = breaks.slice(1, -1).flatMap((value, index): (number | string)[] => [value, palette[index + 1] ?? '#000000']);

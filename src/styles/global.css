@@ -363,3 +363,25 @@ figcaption { font-size: var(--small); color: var(--muted); margin-top: 10px; lin
 }
 
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+.kmeans { margin: 24px 0; }
+.kmeans-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.kmeans-k { display: inline-flex; align-items: center; gap: 8px; margin-right: 8px; font-weight: 600; }
+.kmeans-k input { width: 96px; }
+.kmeans-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+.kmeans-stats div { background: var(--surface); padding: 8px 12px; }
+.kmeans-stats dt { color: var(--muted); font-size: var(--small); }
+.kmeans-stats dd { margin: 0; font-weight: 600; font-size: 1.25rem; }
+.kmeans-plot { position: relative; padding-left: 20px; }
+.kmeans-plot canvas { display: block; width: 100%; aspect-ratio: 4 / 3; }
+.kmeans-axis { display: block; color: var(--muted); font-size: var(--small); }
+.kmeans-axis-x { text-align: center; }
+.kmeans-axis-y { position: absolute; left: 0; top: 50%; transform: translate(-45%, -50%) rotate(-90deg); white-space: nowrap; }
+.kmeans figcaption { color: var(--muted); font-size: var(--small); margin-top: 8px; }
+.calendars { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 24px 0; }
+.calendar { margin: 0; }
+.calendar figcaption { font-weight: 600; font-size: var(--small); display: flex; align-items: center; gap: 6px; }
+.calendar-swatch { width: 12px; height: 12px; display: inline-block; }
+.calendar svg { width: 100%; height: auto; display: block; }
+.calendar text { font-size: 6px; fill: var(--muted); }
+.calendar p { margin: 4px 0 0; font-size: var(--small); color: var(--muted); }

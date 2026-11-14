@@ -1,8 +1,8 @@
 import type { Artifact, AirIndex, CellIndex, RegionId, SiteIndex } from './rainfall';
 import { isFarm, VARIABLES, type Variable, type Window } from './variable';
 
-export type Mode = 'mean' | 'year' | 'enso' | 'trend' | 'farm';
-export const MODES: readonly Mode[] = ['mean', 'year', 'enso', 'trend', 'farm'];
+export type Mode = 'mean' | 'year' | 'enso' | 'trend' | 'farm' | 'climate';
+export const MODES: readonly Mode[] = ['mean', 'year', 'enso', 'trend', 'farm', 'climate'];
 
 export type Focus =
   | { readonly kind: 'country' }
@@ -14,7 +14,7 @@ export type Focus =
 export const COUNTRY: Focus = { kind: 'country' };
 
 export const CHAPTER_IDS = [
-  'rain', 'driest', 'wettest', 'swing', 'enso', 'enso-region', 'pantabangan',
+  'rain', 'driest', 'wettest', 'swing', 'climate', 'enso', 'enso-region', 'pantabangan',
   'farm-enso', 'farm-green', 'farm-night', 'trend', 'trend-where', 'trend-region', 'regions', 'next-year',
 ] as const;
 export type ChapterId = (typeof CHAPTER_IDS)[number];
@@ -36,6 +36,7 @@ export const CHAPTERS: Readonly<Record<ChapterId, ChapterSpec>> = {
   driest: { mode: 'year', year: (a) => a.national.driest.year, focus: country, unmetTrendStyle: 'faded', field: 'paper' },
   wettest: { mode: 'year', year: (a) => a.national.wettest.year, focus: country, unmetTrendStyle: 'faded', field: 'paper' },
   swing: { mode: 'year', year: null, focus: country, unmetTrendStyle: 'faded', field: 'paper' },
+  climate: { mode: 'climate', year: null, focus: country, unmetTrendStyle: 'faded', field: 'paper' },
   enso: { mode: 'enso', year: null, focus: country, unmetTrendStyle: 'faded', field: 'yellow' },
   'enso-region': { mode: 'enso', year: null, focus: (a) => ({ kind: 'region', region: a.facts.focus.enso_region[0] }), unmetTrendStyle: 'faded', field: 'yellow' },
   pantabangan: { mode: 'enso', year: null, focus: (_a, cell) => ({ kind: 'cell', cell }), unmetTrendStyle: 'faded', field: 'yellow' },

@@ -27,8 +27,9 @@ from shapely.ops import unary_union
 from shapely.prepared import prep
 
 if __package__:
-    from . import imerg, merra2, modis, tmin
+    from . import climate, imerg, merra2, modis, tmin
 else:
+    import climate
     import imerg
     import merra2
     import modis
@@ -159,7 +160,7 @@ def load_cube():
               "manifest": IMERG_MANIFEST.name, "manifest_sha256": sha256(manifest_raw),
               "tiles": manifest["counts"]["tiles"], "requests": manifest["counts"]["requests"],
               "api": manifest["api"]}
-    return annual, jan_apr, record
+    return annual, jan_apr, record, climate.month_shares(cube)
 
 
 def cube_series(cube):
@@ -559,7 +560,7 @@ def farm_record(snapshot, flags, rain):
                for period in ("day", "night")}}
 
 
-def build_artifact(raws, records, annual, jan_apr, cube_record):
+def build_artifact(raws, records, annual, jan_apr, cube_record, month_shares):
     adm0 = unary_union([geometry for _, geometry in parse_polygons(raws["adm0"], "ADM0")])
     if set(annual) != imerg.land_pixels(adm0):
         raise ValueError("IMERG cube pixels differ from the ADM0 land-intersecting pixels")
@@ -603,6 +604,21 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
                              weighted_mean_series(national_members, jan_apr_by_position), flags)
     farm = farm_record(farm_snapshot, flags, weighted_mean_series(
         [(i, weight * cropland_pct[i] / 100) for i, weight in national_members], jan_apr_by_position))
+    climate_labels, centroids, iterations, inertia = climate.cluster([month_shares[index] for index in indices])
+    if (max(range(12), key=lambda m: centroids[0][m]) not in range(5, 9)
+            or max(range(12), key=lambda m: centroids[-1][m]) not in (10, 11, 0)):
+        raise ValueError("Rain-calendar groups no longer resemble PAGASA Types I and II; review the climate claims")
+    groups = []
+    for group, (centroid, pagasa) in enumerate(zip(centroids, ("I", "III", "IV", "II"), strict=True)):
+        group_members = [(i, w) for i, w in national_members if climate_labels[i] == group]
+        series = weighted_mean_series(group_members, jan_apr_by_position)
+        groups.append({"pagasa_type": pagasa, "count": len(group_members),
+                       "land_share": rnd(math.fsum(w for _, w in group_members) / math.fsum(land_weight), 4),
+                       "month_share_pct": [rnd(100 * v, 2) for v in centroid],
+                       "jan_apr_share_pct": rnd(100 * sum(centroid[:4]), 1),
+                       "wettest_month": max(range(12), key=lambda m: centroid[m]) + 1,
+                       "enso": comparison_record(enso_comparison(series, flags, statistics.mean(series)))})
+    climate_record = {"k": climate.K, "iterations": iterations, "inertia": rnd(inertia, 4), "groups": groups}
     tmin_snapshot, tmin_source = tmin.load_snapshot()
     if [(s["lat"], s["lon"]) for s in tmin_snapshot["sites"]] != [(s["lat"], s["lon"]) for s in farm["sites"]]:
         raise ValueError("T2M_MIN sites differ from the MODIS farm sites")
@@ -728,6 +744,8 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
         "meets": [int(c["p"] < ALPHA) for c in cell_stats],
         "jan_apr_enso_diff_pct": [rnd(c["enso"], 1) for c in cell_stats],
         "jan_apr_enso_sign": [(c["enso"] > 0) - (c["enso"] < 0) for c in cell_stats],
+        "climate": climate_labels,
+        "month_share": [v for index in indices for v in month_shares[index]],
     }
 
     boundaries = {name: {**records[name], **BOUNDARY_META[name],
@@ -751,6 +769,7 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
         "legend": legend,
         "national": strip_raw(national),
         "farm": farm,
+        "climate": climate_record,
         "air": air,
         "regions": [strip_raw(record) for record in region_records],
         "cells": cells,
@@ -782,7 +801,7 @@ def main():
         if args.refresh:
             adm0 = unary_union([geometry for _, geometry in parse_polygons(raws["adm0"], "ADM0")])
             imerg.build_cube(imerg.tile_plan(adm0), imerg.land_pixels(adm0))
-        annual, jan_apr, cube_record = load_cube()
+        annual, jan_apr, cube_record, shares = load_cube()
         if args.refresh or not modis.SNAPSHOT.exists():
             if args.offline:
                 raise ValueError("Missing offline MODIS snapshot")
@@ -791,7 +810,7 @@ def main():
             if args.offline:
                 raise ValueError("Missing offline MERRA-2 snapshot")
             merra2.build_snapshot(imerg.load_boundary())
-        artifact = build_artifact(raws, records, annual, jan_apr, cube_record)
+        artifact = build_artifact(raws, records, annual, jan_apr, cube_record, shares)
         content = publish(raws, records, cube_record, artifact)
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"Rainfall build failed: {error}", file=sys.stderr)

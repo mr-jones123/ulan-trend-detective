@@ -40,6 +40,8 @@ export type RainMap = {
   setCooperative(enabled: boolean): void;
   center(): [number, number];
   canvas(): HTMLCanvasElement;
+  /** Colour squares by a live k-means run; null returns to the published groups. */
+  paintGroups(labels: Int8Array | null): void;
 };
 
 type Applied = {
@@ -95,6 +97,7 @@ export function createMap(options: {
       enso: a.cells.jan_apr_enso_diff_pct[cell] ?? 0,
       meets: a.cells.meets[cell] ?? 0,
       cropland: a.cells.cropland_pct[cell] ?? 0,
+      climate: a.cells.climate[cell] ?? 0,
     },
   }));
 
@@ -320,5 +323,12 @@ export function createMap(options: {
       return [c.lng, c.lat];
     },
     canvas: () => map.getCanvas(),
+    paintGroups(labels) {
+      if (!ready) return;
+      for (let i = 0; i < grid.count; i += 1) {
+        if (labels === null) map.removeFeatureState({ source: 'cells', id: i }, 'k');
+        else map.setFeatureState({ source: 'cells', id: i }, { k: labels[i] });
+      }
+    },
   };
 }
