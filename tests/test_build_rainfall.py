@@ -198,3 +198,16 @@ class ModisTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GiovanniTests(unittest.TestCase):
+    def test_pinned_csv_matches_artifact_and_rejects_other_regions(self):
+        from scripts.build_rainfall import GIOVANNI, ROOT, giovanni_check
+        artifact = json.loads((ROOT / "public/data/philippines-rainfall.json").read_text())
+        raw = GIOVANNI.read_bytes()
+        record = giovanni_check(raw, artifact["national"]["jan_apr"]["mm"], artifact["enso"]["began_el_nino"])
+        self.assertEqual(record, artifact["provenance"]["giovanni"])
+        self.assertGreater(record["r"], 0.9)
+        global_box = raw.replace(b'"116.9,4.5,126.7,21.2"', b'""')
+        with self.assertRaises(ValueError):
+            giovanni_check(global_box, artifact["national"]["jan_apr"]["mm"], artifact["enso"]["began_el_nino"])

@@ -201,6 +201,12 @@ export const rainfallSchema = z.object({
       other_ratio_range: z.tuple([z.number(), z.number()]),
       merra2_source: z.string(), imerg_source: z.string(),
     }),
+    giovanni: z.object({
+      file: z.string(), sha256, bytes: z.int().positive(), url: z.url(), bbox, dataset: z.literal('GPM_3IMERGM v07'),
+      jan_apr_mm: yearly, mean_mm: z.number().positive(), anomaly_pct: yearly, r: z.number().min(-1).max(1),
+      enso: ensoComparison, sen_pct_decade: z.number(), p: z.number().min(0).max(1), direction,
+      meets_threshold: z.boolean(),
+    }),
   }),
 }).superRefine((data, context) => {
   const { cells } = data;

@@ -135,6 +135,15 @@ The first version of this map used NASA POWER's MERRA-2 `PRECTOTCORR`. At 121.25
 
 The builder recomputes this audit from the two preserved point responses in `data/sources/audit/` and stores it as `provenance.source_audit`. The "Why we use IMERG" disclosure on the page shows the 25-year table from that record.
 
+## Cross-check against NASA Giovanni
+
+`data/sources/giovanni/imerg-monthly-ph-bbox.csv` is a Giovanni area-averaged time series of `GPM_3IMERGM` v07 Final Run, mm/month, over the box 116.9° E to 126.7° E, 4.5° N to 21.2° N, January 2001 to April 2025. Giovanni needs an Earthdata login, so the file is downloaded by hand from the URL in its header and committed. The builder verifies the box, product and units, then stores the comparison as `provenance.giovanni` with the file's SHA-256. The box includes sea and our series is land-area weighted, so absolute totals differ; the page shows both as percentages of their own means in the "Checked against NASA Giovanni" disclosure.
+
+- January to April: year-to-year correlation r = 0.976. El Niño-start gap −59.8% here, −57.2% in Giovanni. Neither trend meets the test (p = 0.657 and 0.559).
+- Annual, 2001-2024, not stored in the artifact: r = 0.951. El Niño-start gap −15.6% and −11.3%. Neither trend meets the test (p = 0.359 and 0.189).
+
+Both sources read IMERG, so agreement checks our processing, not IMERG itself. Rain gauges are the independent check.
+
 ## Limits
 
 Annual and January to April totals cannot show daily extremes, rainfall timing within either window or typhoon intensity. Rainfall over the Pantabangan square is not reservoir storage and does not measure catchment inflows, releases or evaporation. The January to April 2024 total includes days after the 15 April photograph. Coastal squares include sea. The trend test assumes independent years, and testing 3,735 neighbouring squares means about 5% of land could meet the test by chance even with no trend, as a rough guide only. The El Niño comparison does not separate El Niño from other causes. Nothing on the page is a forecast. The boundary files mark the area the data covers and do not state a position on territorial claims. The ADM1 file still names the Bangsamoro region ARMM.

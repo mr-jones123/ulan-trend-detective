@@ -14,6 +14,12 @@ import { legendModel } from '../lib/colour';
 const artifact = parseArtifact(JSON.parse(await readFile(join(process.cwd(), 'public', DATA_URL), 'utf8')));
 const claims = buildClaims(artifact);
 const audit = artifact.provenance.source_audit;
+const giovanni = artifact.provenance.giovanni;
+// Both series as % of their own mean: the box includes sea, so only the pattern is comparable.
+const gExtent = Math.ceil(Math.max(...[...giovanni.anomaly_pct, ...artifact.national.jan_apr.anomaly_pct].map(Math.abs)) / 20) * 20;
+const gY = (pct: number) => (50 - (50 * pct) / gExtent).toFixed(2);
+const gPath = (values: readonly number[]) => values.map((v, i) => `${i === 0 ? 'M' : 'L'}${i * 10 + 5} ${gY(v)}`).join(' ');
+const gYears = artifact.enso.began_el_nino.map((flag, i) => ({ flag, year: artifact.period.start + i, x: i * 10 }));
 const cellCount = fmt.count(artifact.cells.count);
 const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elninolanina/EN_Advisory_5.pdf';
 const description = `${claims['standfirst-enso'].text} ${claims['standfirst-trend'].text} NASA IMERG rainfall over the Philippines, 2001-2025.`;
@@ -178,6 +184,24 @@ const januarySquares = artifact.period.years.map((year, index) => {
                   ))}
                 </tbody>
               </table>
+            </details>
+            <details class="why-imerg giovanni-check">
+              <summary>Checked against NASA Giovanni</summary>
+              <p>We asked NASA's Giovanni for the same IMERG Final Run record, monthly, over {fmt.lon(giovanni.bbox[0])} to {fmt.lon(giovanni.bbox[2])} and {fmt.lat(giovanni.bbox[1])} to {fmt.lat(giovanni.bbox[3])}, and ran it through the same tests.</p>
+              <p data-claim={claims.giovanni.id} data-verdict={claims.giovanni.verdict}>{claims.giovanni.text}</p>
+              <figure class="giovanni-figure">
+                <p class="chart-key"><span class="key-ours">this page</span><span class="key-giovanni">Giovanni</span><span class="key-band">began in El Niño</span></p>
+                <div class="giovanni-plot" role="img" aria-label={`January to April rain each year from ${artifact.period.start} to ${artifact.period.end}, as a percentage above or below each series' own average, for this page and for Giovanni. ${claims.giovanni.text}`}>
+                  <svg viewBox="0 0 250 100" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+                    {gYears.filter((d) => d.flag).map((d) => <rect class="giovanni-band" x={d.x} y="0" width="10" height="100" />)}
+                    <line class="baseline" x1="0" y1="50" x2="250" y2="50" vector-effect="non-scaling-stroke" />
+                    <path class="giovanni-line" d={gPath(giovanni.anomaly_pct)} vector-effect="non-scaling-stroke" />
+                    <path class="ours-line" d={gPath(artifact.national.jan_apr.anomaly_pct)} vector-effect="non-scaling-stroke" />
+                  </svg>
+                </div>
+                <figcaption>January to April rain, percentage above or below each series' own {artifact.period.start}-{artifact.period.end} average. Scale ±{gExtent}%. Our average is {fmt.mm(artifact.national.jan_apr.mean_mm)}, Giovanni's {fmt.mm(giovanni.mean_mm)}.</figcaption>
+              </figure>
+              <p>Both read IMERG, so this checks our processing, not the satellite estimate itself. <a href={giovanni.url}>Reproduce in Giovanni</a>.</p>
             </details>
           </div>
         </section>

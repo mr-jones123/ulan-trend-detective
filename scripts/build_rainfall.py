@@ -47,6 +47,8 @@ ENSO_THRESHOLD = 0.5
 REGION_COUNT = 17
 AUDIT_POINT = (121.25, 14.5)
 PANTABANGAN = (121.14, 15.85)
+GIOVANNI = SOURCES / "giovanni" / "imerg-monthly-ph-bbox.csv"
+GIOVANNI_BBOX = [116.9, 4.5, 126.7, 21.2]
 DIVERGING_EXTENTS = (2, 4, 5, 8, 10, 15, 20, 30, 40, 50, 60, 80, 100)
 MEAN_CLASSES = 7
 MEAN_STEP = 500
@@ -267,6 +269,36 @@ def source_audit(merra2_raw, imerg_raw):
         "ratio": [rnd(v, 3) for v in ratio], "max_ratio_year": YEARS[peak],
         "other_ratio_range": [rnd(min(others), 3), rnd(max(others), 3)],
         "merra2_source": "audit_merra2", "imerg_source": "audit_imerg",
+    }
+
+
+def giovanni_check(raw, ours, flags):
+    """Compare our national January to April IMERG series with a Giovanni area average.
+
+    Giovanni's box includes sea and ours is land-weighted, so totals differ by design;
+    the record keeps the pattern, El Nino gap and trend decision for each.
+    """
+    lines = raw.decode().splitlines()
+    header = dict(line.split(",", 1) for line in lines if line[:2] != "20" and "," in line)
+    bbox = [float(v) for v in header["User Bounding Box:"].strip('"').split(",")]
+    url = header["URL to Reproduce Results:"].strip('"')
+    if bbox != GIOVANNI_BBOX or "GPM_3IMERGM_07_precipitation(units%3Dmm%2Fmonth)" not in url:
+        raise ValueError("Giovanni CSV must be GPM_3IMERGM v07 in mm/month over the Philippine box")
+    months = {(int(line[:4]), int(line[5:7])): float(line.split(",")[1]) for line in lines if line[:2] == "20"}
+    if any(months.get((year, month), -1) < 0 for year in YEARS for month in range(1, 5)):
+        raise ValueError("Giovanni CSV is missing or has fill values in a January to April month")
+    theirs = [math.fsum(months[year, month] for month in range(1, 5)) for year in YEARS]
+    mean = math.fsum(theirs) / len(theirs)
+    slope, _, _, p = trend(theirs)
+    return {
+        "file": str(GIOVANNI.relative_to(ROOT)), "sha256": sha256(raw), "bytes": len(raw),
+        "url": url, "bbox": bbox, "dataset": "GPM_3IMERGM v07",
+        "jan_apr_mm": [rnd(v, 1) for v in theirs], "mean_mm": rnd(mean, 1),
+        "anomaly_pct": [rnd(100 * (v - mean) / mean, 2) for v in theirs],
+        "r": rnd(statistics.correlation(ours, theirs), 3),
+        "enso": comparison_record(enso_comparison(theirs, flags, mean)),
+        "sen_pct_decade": rnd(1000 * slope / mean, 3), "p": serial_p(p),
+        "direction": direction(slope), "meets_threshold": p < ALPHA,
     }
 
 
@@ -702,7 +734,8 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
         "cells": cells,
         "facts": facts,
         "provenance": {"imerg": cube_record, "modis": farm_source, "merra2": air_source,
-                       "snapshots": records, "source_audit": audit},
+                       "snapshots": records, "source_audit": audit,
+                       "giovanni": giovanni_check(GIOVANNI.read_bytes(), national["jan_apr"]["mm"], flags)},
     }
 
 

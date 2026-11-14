@@ -268,6 +268,19 @@ figcaption { font-size: var(--small); color: var(--muted); margin-top: 10px; lin
 .why-imerg { break-inside: avoid; background: var(--surface); padding: 16px; margin-bottom: 16px; }
 .why-imerg summary { cursor: pointer; font-weight: 600; min-height: 44px; display: flex; align-items: center; }
 .audit-table tr[data-audit-year='2020'] { font-weight: 600; }
+.giovanni-figure { margin: 16px 0; }
+.giovanni-plot { position: relative; aspect-ratio: 5 / 2; }
+.giovanni-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.giovanni-band { fill: var(--accent); opacity: 0.55; }
+.ours-line, .giovanni-line { fill: none; stroke-width: 2px; stroke-linejoin: round; }
+.ours-line { stroke: var(--ink); }
+.giovanni-line { stroke: var(--muted); stroke-dasharray: 4 3; }
+.giovanni-figure .chart-key { flex-wrap: wrap; gap: 4px 16px; }
+.giovanni-figure .chart-key span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.giovanni-figure .chart-key span::before { content: ''; width: 18px; height: 0; border-top: 2px solid var(--ink); }
+.giovanni-figure .key-giovanni::before { border-top: 2px dashed var(--muted) !important; }
+.giovanni-figure .key-band::before { height: 10px !important; border: 0 !important; background: var(--accent); }
+.giovanni-figure figcaption { color: var(--muted); font-size: var(--small); margin-top: 8px; }
 
 .sources { display: grid; grid-template-columns: repeat(12, 1fr); column-gap: 24px; padding: clamp(120px, 12vw, 200px) var(--margin); }
 .sources-heading { grid-column: 1 / span 3; font-size: var(--head); }

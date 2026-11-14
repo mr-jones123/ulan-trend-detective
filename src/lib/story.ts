@@ -71,7 +71,7 @@ export const CLAIM_IDS = [
   'enso-region', 'pantabangan-enso', 'pantabangan-2024', 'trend', 'trend-where', 'trend-where-other',
   'trend-region', 'next-year', 'audit', 'season-window', 'pantabangan-context', 'pantabangan-limit',
   'comparison-limit', 'method-totals', 'method-weights', 'method-enso', 'method-limits',
-  'farm-rain', 'farm-day', 'farm-night', 'farm-sites', 'farm-drift', 'farm-context', 'farm-limit', 'farm-chart', 'method-farm',
+  'farm-rain', 'farm-day', 'farm-night', 'farm-sites', 'farm-drift', 'farm-context', 'farm-limit', 'farm-chart', 'method-farm', 'giovanni',
 ] as const;
 export type ClaimId = (typeof CLAIM_IDS)[number];
 
@@ -322,11 +322,26 @@ export function buildClaims(a: Artifact): Claims {
       text: "A year began in El Niño when NOAA's December-to-February Oceanic Niño Index is +0.5 °C or more. This is this page's start-of-year rule, not NOAA's full episode definition. The map compares January to April totals in those years with the same months in other years. Annual comparisons remain as context. The comparison has no significance test and does not separate El Niño from other causes." },
     'method-limits': { id: 'method-limits', verdict: 'fixed', direction: 'none',
       text: 'Annual and January to April totals cannot show daily extremes, rain timing within either window or typhoon intensity. Coastal squares include sea. The Mann-Kendall test uses 25 annual values, with no correction for autocorrelation or multiple testing. Neighbouring squares are not independent. Nothing here is a forecast. The boundary files mark data coverage, not a position on territorial claims.' },
+    giovanni: giovanniClaim(a),
     audit: { id: 'audit', verdict: 'fixed', direction: 'none',
       text: `In ${audit.max_ratio_year}, MERRA-2 gave ${fmt.mm(audit.merra2_mm[peak] ?? Number.NaN)} at ${fmt.lon(audit.point[0])}, ${fmt.lat(audit.point[1])}, ${(audit.ratio[peak] ?? Number.NaN).toFixed(2)} times the ${fmt.mm(audit.imerg_mm[peak] ?? Number.NaN)} IMERG measured there. In the other ${audit.years.length - 1} years the ratio stayed between ${lowRatio.toFixed(2)} and ${highRatio.toFixed(2)}.` },
   };
   assertClaims(claims);
   return claims;
+}
+
+function giovanniClaim(a: Artifact): Claim {
+  const g = a.provenance.giovanni;
+  const ours = a.national.jan_apr;
+  const sameGap = g.enso.direction === ours.enso.direction;
+  const sameTest = g.meets_threshold === ours.meets_threshold;
+  const tests = sameTest
+    ? (ours.meets_threshold ? 'Both January to April trends meet the test.' : 'Neither January to April trend meets the test.')
+    : `The trend tests disagree: ours ${ours.meets_threshold ? 'meets' : 'does not meet'} the test, Giovanni's ${g.meets_threshold ? 'meets' : 'does not meet'} it.`;
+  return {
+    id: 'giovanni', verdict: sameGap && sameTest ? 'agree' : 'differ', direction: 'none',
+    text: `Giovanni averages a box around the islands, sea included, so its totals run lower than our land-weighted ones. The year-to-year pattern matches, r = ${g.r.toFixed(3)}. It puts the El Niño-start January to April gap at ${fmt.signedPct(g.enso.diff_pct)}, against our ${fmt.signedPct(ours.enso.diff_pct)}. ${tests}`,
+  };
 }
 
 const LEXICON: Record<'up' | 'down', RegExp> = {
