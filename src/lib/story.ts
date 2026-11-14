@@ -71,7 +71,7 @@ export const CLAIM_IDS = [
   'enso-region', 'pantabangan-enso', 'pantabangan-2024', 'trend', 'trend-where', 'trend-where-other',
   'trend-region', 'next-year', 'audit', 'season-window', 'pantabangan-context', 'pantabangan-limit',
   'comparison-limit', 'method-totals', 'method-weights', 'method-enso', 'method-limits',
-  'farm-rain', 'farm-day', 'farm-night', 'farm-sites', 'farm-drift', 'farm-context', 'farm-limit', 'farm-chart', 'method-farm', 'giovanni',
+  'farm-rain', 'farm-day', 'farm-night', 'farm-sites', 'farm-drift', 'farm-context', 'farm-limit', 'farm-chart', 'method-farm', 'giovanni', 'farm-night-air', 'farm-green', 'farm-green-trend', 'farm-green-chart',
 ] as const;
 export type ClaimId = (typeof CLAIM_IDS)[number];
 
@@ -288,6 +288,8 @@ export function buildClaims(a: Artifact): Claims {
         : `At ${farm.night_rising_meets} of ${farm.sites.length} sites, a rising night slope meets the test.` },
     'farm-drift': { id: 'farm-drift', verdict: trendVerdict(refit), direction: 'none',
       text: `Terra's orbit drift after 2020 moved its overpasses earlier. Refitting only 2001-2019 gives ${refitChange} (${fmt.pSameSideOfAlpha(refit.p, refit.meets_threshold, alpha)}), which ${refit.meets_threshold ? 'meets' : 'does not meet'} the test. The full-record result cannot separate climate from changing observation time.` },
+    ...greenClaims(farm, alpha),
+    'farm-night-air': nightAirClaim(farm.night, farm.night_air, alpha),
     'farm-context': { id: 'farm-context', verdict: 'context-only', direction: 'mixed',
       text: 'Peng and colleagues reported in 2004 that dry-season rice grain yield at IRRI in Los Baños fell about 10% per 1 °C of higher minimum air temperature. Their January to April field study is context, not a conversion from these satellite observations to Philippine yield loss.' },
     'farm-limit': { id: 'farm-limit', verdict: 'fixed', direction: 'none',
@@ -328,6 +330,43 @@ export function buildClaims(a: Artifact): Claims {
   };
   assertClaims(claims);
   return claims;
+}
+
+function greenClaims(farm: Artifact['farm'], alpha: number): Pick<Claims, 'farm-green' | 'farm-green-trend' | 'farm-green-chart'> {
+  const g = farm.green;
+  const n = farm.sites.length;
+  const signed = (v: number) => `${v > 0 ? '+' : v < 0 ? MINUS : ''}${Math.abs(v).toFixed(3)} NDVI per decade`;
+  const word = { down: 'lower', up: 'higher', zero: 'the same' }[g.enso_direction];
+  const ending = g.meets_threshold && !g.refit.meets_threshold
+    ? 'Over 2001-2019, before Terra drifted, it does not, so this small change is not a firm trend.'
+    : `Over 2001-2019 it ${g.refit.meets_threshold ? 'also meets' : 'does not meet'} the test.`;
+  return {
+    'farm-green': {
+      id: 'farm-green', verdict: g.enso_direction, direction: g.enso_direction === 'zero' ? 'none' : g.enso_direction,
+      heading: { down: 'The fields were less green', up: 'The fields were greener', zero: 'The fields were as green' }[g.enso_direction],
+      text: `NDVI measures how green plants look from space, from 0 for bare ground to about 0.9 for dense, healthy leaves. Across the same ${n} cropland sites, January to April NDVI averaged ${g.mean_ndvi.toFixed(3)}. In El Niño-start years it was ${Math.abs(g.enso_diff_ndvi).toFixed(3)} ${word} than in other years, and ${farm.green_lower_sites} of ${n} sites were lower.`,
+    },
+    'farm-green-trend': {
+      id: 'farm-green-trend', verdict: g.meets_threshold ? 'meets' : 'chance', direction: 'none',
+      text: `Over 2001-2025 the site-mean NDVI changed by ${signed(g.sen_ndvi_decade)} (${fmt.pSameSideOfAlpha(g.p, g.meets_threshold, alpha)}), which ${g.meets_threshold ? 'meets' : 'does not meet'} the test. NDVI also comes from Terra. ${ending}`,
+    },
+    'farm-green-chart': { id: 'farm-green-chart', verdict: 'fixed', direction: 'none',
+      text: 'January to April NDVI over cropland pixels, equal-weight site mean, cloudy pixels removed.' },
+  };
+}
+
+function nightAirClaim(surface: Artifact['farm']['night'], air: Artifact['farm']['night_air'], alpha: number): Claim {
+  const signed = (v: number) => `${v > 0 ? '+' : v < 0 ? MINUS : ''}${Math.abs(v).toFixed(2)} °C per decade`;
+  const verdict = air.direction !== surface.direction ? 'opposite' : air.meets_threshold ? 'confirms' : 'same-sign';
+  const ending = {
+    confirms: 'It also meets the test.',
+    'same-sign': 'Its slope has the same sign but does not meet the test, so the air record does not confirm the surface result.',
+    opposite: 'Its slope has the opposite sign.',
+  }[verdict];
+  return {
+    id: 'farm-night-air', verdict, direction: 'none',
+    text: `A check without an orbit: MERRA-2 minimum air temperature over the same 12 sites changed by ${signed(air.sen_c_decade)} from January to April 2001-2025 (${fmt.pSameSideOfAlpha(air.p, air.meets_threshold, alpha)}), and by ${signed(air.refit.sen_c_decade)} over 2001-2019. ${ending} Air is not ground surface, and each model cell is coarser than a farm window.`,
+  };
 }
 
 function giovanniClaim(a: Artifact): Claim {

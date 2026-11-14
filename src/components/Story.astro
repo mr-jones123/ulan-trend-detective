@@ -1,7 +1,7 @@
 ---
 import { chartHtml } from '../lib/chart';
 import { legendModel } from '../lib/colour';
-import { farmChart, placeChart, placeOf } from '../lib/place';
+import { farmChart, greenChart, placeChart, placeOf } from '../lib/place';
 import { decodeCells, DATA_URL, type Artifact } from '../lib/rainfall';
 import { fmt, TEST_WORDS, type Claim, type Claims } from '../lib/story';
 import { CHAPTER_IDS, CHAPTERS, COUNTRY, MODES, type ChapterId, type Mode } from '../lib/view';
@@ -30,6 +30,7 @@ const HEADINGS: Record<ChapterId, string> = {
   'enso-region': claims['enso-region'].heading ?? '',
   pantabangan: 'Pantabangan, 2023 and 2024',
   'farm-enso': claims['farm-rain'].heading ?? '',
+  'farm-green': claims['farm-green'].heading ?? '',
   'farm-night': claims['farm-night'].heading ?? '',
   trend: claims.trend.heading ?? '',
   'trend-where': claims['trend-where'].heading ?? '',
@@ -46,7 +47,8 @@ const CLAIMS_BY_CHAPTER: Record<ChapterId, readonly Claim[]> = {
   'enso-region': [claims['enso-region']],
   pantabangan: [],
   'farm-enso': [claims['farm-rain'], claims['farm-day']],
-  'farm-night': [claims['farm-night'], claims['farm-sites'], claims['farm-drift']],
+  'farm-green': [claims['farm-green'], claims['farm-green-trend']],
+  'farm-night': [claims['farm-night'], claims['farm-sites'], claims['farm-drift'], claims['farm-night-air']],
   trend: [claims.trend],
   'trend-where': [claims['trend-where'], claims['trend-where-other']],
   'trend-region': [claims['trend-region']],
@@ -143,6 +145,10 @@ const trendResult = (s: Pick<typeof n, 'direction' | 'sen_mm_decade' | 'p' | 'me
               <p data-claim={claims['pantabangan-2024'].id} data-verdict={claims['pantabangan-2024'].verdict} data-reveal>{claims['pantabangan-2024'].text}</p>
               <p class="note" data-claim={claims['pantabangan-limit'].id} data-verdict={claims['pantabangan-limit'].verdict} data-reveal>{claims['pantabangan-limit'].text} For drought advisories, follow <a href={PAGASA}>PAGASA</a>.</p>
             </>
+          )}
+
+          {chapter.id === 'farm-green' && (
+            <div data-reveal data-claim="farm-green-chart" data-verdict={claims['farm-green-chart'].verdict} set:html={chartHtml(greenChart(a, claims['farm-green-chart'].text))} />
           )}
 
           {(chapter.id === 'farm-enso' || chapter.id === 'farm-night') && (

@@ -24,8 +24,20 @@ else:
 CACHE = imerg.ROOT / "data/cache/modis"
 SNAPSHOT = imerg.SOURCES / "modis-farm.json.gz"
 MANIFEST = imerg.SOURCES / "modis-manifest.json"
+NDVI_SNAPSHOT = imerg.SOURCES / "modis-ndvi.json.gz"
+NDVI_MANIFEST = imerg.SOURCES / "modis-ndvi-manifest.json"
+NDVI_BAND = "250m_16_days_NDVI"
+RELIABILITY_BAND = "250m_16_days_pixel_reliability"
 RADIUS = 6371007.181
 CELL = 463.312716528
+# band: (cell size, valid raw values, fill, units, scale); None skips the check
+BANDS = {
+    "LC_Type1": (CELL, range(1, 18), 255, None, None),
+    "LST_Day_1km": (CELL * 2, range(7500, 65536), 0, "Kelvin", 0.02),
+    "LST_Night_1km": (CELL * 2, range(7500, 65536), 0, "Kelvin", 0.02),
+    NDVI_BAND: (CELL / 2, range(-2000, 10001), -3000, None, 0.0001),
+    RELIABILITY_BAND: (CELL / 2, range(0, 4), -1, None, None),
+}
 API = "https://modis.ornl.gov/rst/api/v1"
 
 
@@ -69,17 +81,15 @@ def request_url(product, band, lat, lon, radius, start, end):
 
 def parse_window(raw, band, dates):
     data = json.loads(raw)
-    size = CELL if band == "LC_Type1" else CELL * 2
+    size, valid_range, fill, units, scale = BANDS[band]
     if (data["band"] != band or abs(float(data["cellsize"]) - size) > 0.001
             or not isinstance(data["nrows"], int) or not isinstance(data["ncols"], int)
             or data["nrows"] <= 0 or data["ncols"] <= 0):
         raise ValueError("Unexpected MODIS grid or band")
-    if band != "LC_Type1" and (data["units"] != "Kelvin" or float(data["scale"]) != 0.02):
-        raise ValueError("Unexpected MODIS temperature units or scale")
+    if units is not None and data["units"] != units or scale is not None and float(data["scale"]) != scale:
+        raise ValueError("Unexpected MODIS units or scale")
     if [s["modis_date"] for s in data["subset"]] != dates:
         raise ValueError("Missing, duplicate or unordered MODIS composites")
-    valid_range = range(1, 18) if band == "LC_Type1" else range(7500, 65536)
-    fill = 255 if band == "LC_Type1" else 0
     for subset in data["subset"]:
         values = subset["data"]
         if (subset["band"] != band or len(values) != data["nrows"] * data["ncols"]
@@ -119,7 +129,8 @@ def acquire(url, band, dates, offline=False):
     return data, record
 
 
-def build_snapshot(boundary, offline=False):
+def land_cover(boundary, offline=False):
+    """Deduplicated 2020 MCD12Q1 classes for 500 m pixels inside ADM0, keyed by sinusoidal index."""
     windows = [(round(5.5 + 1.8 * i, 1), round(117.8 + 1.8 * j, 1))
                for i in range(9) for j in range(6)
                if boundary.intersects(box(117.8 + 1.8 * j - 1, 5.5 + 1.8 * i - 0.95,
@@ -147,6 +158,11 @@ def build_snapshot(boundary, offline=False):
                 if key in pixels and pixels[key] != value:
                     raise ValueError("Conflicting overlapping land-cover pixels")
                 pixels[key] = value
+    return pixels, records
+
+
+def build_snapshot(boundary, offline=False):
+    pixels, records = land_cover(boundary, offline)
     crop = {key for key, value in pixels.items() if value == 12}
     totals, crops, density = Counter(), Counter(), Counter()
     for (ix, iy), value in pixels.items():
@@ -216,6 +232,81 @@ def build_snapshot(boundary, offline=False):
     return snapshot, manifest
 
 
+def ndvi_mean(ndvi, reliability, positions):
+    """Mean NDVI of good or marginal cropland pixels; None below the 30% validity rule."""
+    valid = [ndvi[k] for k in positions if reliability[k] in (0, 1) and ndvi[k] != -3000]
+    if not positions or len(valid) / len(positions) < 0.3:
+        return None
+    return math.fsum(valid) / len(valid) * 0.0001
+
+
+def build_ndvi_snapshot(boundary, offline=False):
+    """MOD13Q1 January to April NDVI over cropland at the 12 farm sites, same 25 km windows as LST."""
+    pixels, records = land_cover(boundary, offline=True)
+    crop = {key for key, value in pixels.items() if value == 12}
+    farm, _ = load_snapshot()
+    sites = [{"lat": s["lat"], "lon": s["lon"], "composites": {}} for s in farm["sites"]]
+    jobs = []
+    for site in range(len(sites)):
+        dates_by_year = {year: [f"A{year}{d:03}" for d in range(1, 114, 16)] for year in imerg.YEARS}
+        for year, dates in dates_by_year.items():
+            for band in (NDVI_BAND, RELIABILITY_BAND):
+                url = request_url("MOD13Q1", band, sites[site]["lat"], sites[site]["lon"], 25, dates[0], dates[-1])
+                jobs.append((site, year, band, dates, url))
+    windows = {}
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = {pool.submit(acquire, url, band, dates, offline): (site, year, band)
+                   for site, year, band, dates, url in jobs}
+        for completed, future in enumerate(as_completed(futures), 1):
+            window, record = future.result()
+            records.append(record)
+            windows[futures[future]] = window
+            if completed % 25 == 0 or completed == len(futures):
+                print(f"MODIS NDVI requests {completed}/{len(futures)}", flush=True)
+    for (site, year, band), window in windows.items():
+        if band != NDVI_BAND:
+            continue
+        quality = windows[(site, year, RELIABILITY_BAND)]
+        if any(quality[k] != window[k] for k in ("xllcorner", "yllcorner", "nrows", "ncols")):
+            raise ValueError("NDVI and reliability windows differ")
+        positions = [row * window["ncols"] + col for row in range(window["nrows"]) for col in range(window["ncols"])
+                     if (lambda ix, iy: (ix // 2, iy // 2) in crop)(*pixel_index(window, row, col))]
+        count = len(positions)
+        if not count or sites[site].setdefault("cropland_pixels", count) != count:
+            raise ValueError("NDVI cropland window is empty or changed between requests")
+        for subset, qa in zip(window["subset"], quality["subset"], strict=True):
+            sites[site]["composites"][subset["modis_date"]] = ndvi_mean(subset["data"], qa["data"], positions)
+    for site in sites:
+        site["composites"] = dict(sorted(site["composites"].items()))
+        for year in imerg.YEARS:
+            if not any(v is not None for date, v in site["composites"].items() if date.startswith(f"A{year}")):
+                raise ValueError(f"No valid NDVI for site {site['lat']}, {year}")
+    snapshot = {"schema": "modis-ndvi-v1", "product": "MOD13Q1", "years": list(imerg.YEARS),
+                "mask_year": 2020, "sites": sites}
+    compressed = gzip.compress(imerg.json_bytes(snapshot), mtime=0)
+    manifest = {"boundary_sha256": imerg.BOUNDARY_HASH,
+                "snapshot": {"file": NDVI_SNAPSHOT.name, "sha256": hashlib.sha256(compressed).hexdigest(),
+                             "bytes": len(compressed)},
+                "requests": sorted(records, key=lambda r: r["url"])}
+    imerg.atomic_write(NDVI_SNAPSHOT, compressed)
+    imerg.atomic_write(NDVI_MANIFEST, imerg.json_bytes(manifest))
+    return snapshot, manifest
+
+
+def load_ndvi_snapshot():
+    raw, manifest_raw = NDVI_SNAPSHOT.read_bytes(), NDVI_MANIFEST.read_bytes()
+    manifest = json.loads(manifest_raw)
+    if (manifest["boundary_sha256"] != imerg.BOUNDARY_HASH
+            or manifest["snapshot"]["sha256"] != hashlib.sha256(raw).hexdigest()
+            or manifest["snapshot"]["bytes"] != len(raw)):
+        raise ValueError("NDVI snapshot hash or boundary mismatch")
+    snapshot = json.loads(gzip.decompress(raw))
+    if snapshot["schema"] != "modis-ndvi-v1" or snapshot["years"] != list(imerg.YEARS) or len(snapshot["sites"]) != 12:
+        raise ValueError("Invalid NDVI snapshot schema")
+    return snapshot, {**manifest["snapshot"], "manifest_sha256": hashlib.sha256(manifest_raw).hexdigest(),
+                      "requests": len(manifest["requests"]), "boundary_sha256": imerg.BOUNDARY_HASH}
+
+
 def load_snapshot():
     raw = SNAPSHOT.read_bytes()
     manifest_raw = MANIFEST.read_bytes()
@@ -234,5 +325,6 @@ def load_snapshot():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--offline", action="store_true")
+    parser.add_argument("--ndvi", action="store_true", help="Build the MOD13Q1 NDVI snapshot at the farm sites")
     args = parser.parse_args()
-    build_snapshot(imerg.load_boundary(), args.offline)
+    (build_ndvi_snapshot if args.ndvi else build_snapshot)(imerg.load_boundary(), args.offline)

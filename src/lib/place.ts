@@ -121,6 +121,18 @@ export function placeChart(a: Artifact, place: Place, selectedYear: number | nul
   };
 }
 
+export function greenChart(a: Artifact, summary: string): ChartInput {
+  const s = a.farm.green;
+  return {
+    key: 'farm:green', name: 'Cropland sites, crop greenness (NDVI)', years: a.period.years,
+    totals: s.ndvi, period: 'January to April', unit: 'NDVI', baseline: 'mean', summary,
+    enso: a.enso.began_el_nino, mean: s.mean_ndvi, selectedYear: null,
+    trend: { senPerDecade: s.sen_ndvi_decade, mid: s.sen_mid_ndvi,
+      label: `${s.sen_ndvi_decade > 0 ? '+' : ''}${s.sen_ndvi_decade.toFixed(3)} NDVI per decade, ${fmt.pSameSideOfAlpha(s.p, s.meets_threshold, a.alpha)}`,
+      p: s.p, meets: s.meets_threshold, alpha: a.alpha },
+  };
+}
+
 export function farmChart(a: Artifact, period: 'day' | 'night', summary: string): ChartInput {
   const s = a.farm[period];
   return {

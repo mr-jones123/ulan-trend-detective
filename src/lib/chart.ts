@@ -20,7 +20,7 @@ export type ChartInput = {
   readonly selectedYear: number | null;
 } & (
   | { readonly unit: 'mm'; readonly baseline: 'zero' }
-  | { readonly unit: '°C'; readonly baseline: 'mean' }
+  | { readonly unit: '°C' | 'NDVI'; readonly baseline: 'mean' }
 );
 
 const SLOT = 10;
@@ -35,13 +35,14 @@ export function chartHtml(c: ChartInput): string {
   const first = c.years[0] ?? CENTER_YEAR;
   const last = c.years[c.years.length - 1] ?? CENTER_YEAR;
   const trend = c.trend;
-  const valueLabel = (value: number) => c.unit === 'mm' ? fmt.mm(value) : `${value.toFixed(2)} °C`;
+  const valueLabel = (value: number) => c.unit === 'mm' ? fmt.mm(value) : c.unit === 'NDVI' ? `${value.toFixed(3)} NDVI` : `${value.toFixed(2)} °C`;
   const lineAt = (year: number) => trend === null ? 0 : trend.mid + trend.senPerDecade / 10 * (year - CENTER_YEAR);
   const anomaly = c.baseline === 'mean';
   const origin = anomaly ? c.mean : 0;
   const extent = anomaly ? Math.max(...c.totals.map((value) => Math.abs(value - origin)),
     ...(trend === null ? [] : [Math.abs(lineAt(first) - origin), Math.abs(lineAt(last) - origin)])) : 0;
-  const top = anomaly ? Math.max(0.5, Math.ceil(extent * 2) / 2)
+  const step = c.unit === 'NDVI' ? 100 : 2;
+  const top = anomaly ? Math.max(1 / step, Math.ceil(extent * step) / step)
     : Math.max(...c.totals, lineAt(first), lineAt(last)) * 1.12;
   const bottom = anomaly ? -top : 0;
   const y = (value: number) => anomaly
@@ -67,7 +68,7 @@ export function chartHtml(c: ChartInput): string {
   const selectedLabel = anomaly || selectedIndex < 0 || selectedIndex === tallest ? ''
     : `<span class="chart-value chart-value-selected" style="left:${pct(selectedIndex)}%;bottom:${(100 - y(c.totals[selectedIndex] ?? 0)).toFixed(2)}%">${valueLabel(c.totals[selectedIndex] ?? 0)}</span>`;
   const label = anomaly
-    ? `${c.name}: ${c.years.length} ${c.period} temperature anomalies in °C. ${baselineLabel} ${c.summary}`
+    ? `${c.name}: ${c.years.length} ${c.period} ${c.unit === 'NDVI' ? 'NDVI anomalies' : 'temperature anomalies in °C'}. ${baselineLabel} ${c.summary}`
     : `${c.name}: 25 ${c.period} values, average ${valueLabel(c.mean)}. ${c.summary}`;
 
   return `<div class="chart" data-chart data-series="${escape(c.key)}">`

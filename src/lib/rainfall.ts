@@ -83,6 +83,16 @@ const temperature = airSeries.extend({
     p: z.number().min(0).max(1), direction, meets_threshold: z.boolean(),
   }),
 });
+const greenness = z.object({
+  ndvi: z.array(z.number().min(-0.2).max(1)).length(YEAR_COUNT),
+  mean_ndvi: z.number().min(-0.2).max(1), sen_ndvi_decade: z.number(), sen_mid_ndvi: z.number(),
+  p: z.number().min(0).max(1), direction, meets_threshold: z.boolean(),
+  enso_diff_ndvi: z.number(), enso_direction: direction,
+  refit: z.object({
+    start: z.literal(2001), end: z.literal(2019), sen_ndvi_decade: z.number(),
+    p: z.number().min(0).max(1), direction, meets_threshold: z.boolean(),
+  }),
+});
 
 export const rainfallSchema = z.object({
   schema: z.literal('ph-rain-imerg-v4'),
@@ -130,10 +140,12 @@ export const rainfallSchema = z.object({
     mask_year: z.literal(2020), map_threshold_pct: z.literal(10),
     rain: z.object({ mm: yearly, mean_mm: z.number().positive(), enso: ensoComparison }),
     day: temperature, night: temperature, night_rising_meets: z.int().min(0).max(12),
+    night_air: temperature, night_air_rising_meets: z.int().min(0).max(12),
+    green: greenness, green_lower_sites: z.int().min(0).max(12),
     sites: z.array(z.object({
       lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180), cropland_pixels: z.int().positive(),
       outline: z.array(z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)])).length(5),
-      day: temperature, night: temperature,
+      day: temperature, night: temperature, green: greenness,
     })).length(12),
   }),
   regions: z.array(region).length(17),
@@ -190,6 +202,11 @@ export const rainfallSchema = z.object({
       api: z.array(z.object({ name: z.string().min(1), version: z.string().min(1) })).min(1),
     }),
     imerg: z.object({ file: z.string(), sha256, bytes: z.int().positive(), manifest: z.string(), manifest_sha256: sha256 }).loose(),
+    tmin: z.object({ file: z.string(), sha256, bytes: z.int().positive(), manifest_sha256: sha256, requests: z.literal(12),
+      source: z.object({ provider: z.literal('NASA POWER'), dataset: z.literal('MERRA-2'), parameter: z.literal('T2M_MIN'),
+        units: z.literal('C'), time_standard: z.literal('UTC'), endpoint: z.url() }) }),
+    ndvi: z.object({ file: z.string(), sha256, bytes: z.int().positive(), manifest_sha256: sha256,
+      requests: z.int().positive(), boundary_sha256: sha256 }),
     modis: z.object({ file: z.string(), sha256, bytes: z.int().positive(), manifest_sha256: sha256,
       requests: z.int().positive(), boundary_sha256: sha256 }),
     snapshots: z.record(z.string(), snapshot),

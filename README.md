@@ -59,6 +59,8 @@ Python uses Shapely 2.2 and NumPy 2.5.4. NumPy arrays support the MODIS sinusoid
 | `data/sources/audit/*.json.gz` | NASA POWER point requests at 121.25° E, 14.5° N used only for the source audit below | NASA data |
 | `data/sources/modis-farm.json.gz` | [ORNL DAAC MODIS REST API](https://modis.ornl.gov/rst/api/v1/), derived from LP DAAC [MCD12Q1 land cover](https://doi.org/10.5067/MODIS/MCD12Q1.061), Friedl and Sulla-Menashe (2022), and [MOD11A2 surface temperature](https://doi.org/10.5067/MODIS/MOD11A2.061), Wan, Hook and Hulley (2021) | NASA open data, no credentials for subsets |
 | `data/sources/merra2-monthly.json.gz` | [NASA POWER monthly regional API](https://power.larc.nasa.gov/docs/services/api/temporal/monthly/), MERRA-2 `T2M`, UTC, 2001-2025, four overlapping bounding boxes, 223 land-intersecting native cells | NASA open data, no credentials |
+| `data/sources/modis-ndvi.json.gz` | [ORNL DAAC MODIS REST API](https://modis.ornl.gov/rst/api/v1/), [MOD13Q1 vegetation indices](https://doi.org/10.5067/MODIS/MOD13Q1.061), 250 m, 16-day `250m_16_days_NDVI` and `250m_16_days_pixel_reliability`, January to April 2001-2025 at the 12 farm sites, 600 requests | NASA open data, no credentials for subsets |
+| `data/sources/merra2-tmin-sites.json.gz` | [NASA POWER daily point API](https://power.larc.nasa.gov/docs/services/api/temporal/daily/), MERRA-2 `T2M_MIN`, UTC, 2001-2025, one request per farm site | NASA open data, no credentials |
 
 `data/sources/manifest.json` records each small snapshot's URL, SHA-256 of the uncompressed bytes, byte length and retrieval time. Its `imerg` entry points to `imerg-manifest.json`, which lists all 900 tile requests with their hashes. These small `.gz` files store the original response bytes. `modis-manifest.json` lists every land-cover and temperature request URL and the SHA-256 of its raw response bytes. It also records the compressed derived snapshot hash and pinned ADM0 hash. The artifact preserves both the MODIS snapshot hash and manifest hash.
 
@@ -134,6 +136,14 @@ These are the values in the current artifact. They come from the builder's outpu
 The first version of this map used NASA POWER's MERRA-2 `PRECTOTCORR`. At 121.25° E, 14.5° N, its 2020 annual total was 6,664 mm, against 2,865 mm from IMERG at the same point, a ratio of 2.33. In the other 24 years the ratio stayed between 0.92 and 1.15. MERRA-2's dry-season months in 2020 were the cause, not an aggregation error. That year also began in El Niño, so it would have bent both the trend and the El Niño comparison. Rainfall now uses IMERG. The separate MERRA-2 `T2M` air-temperature variable remains available. A discrepancy in rainfall does not establish that temperature is invalid.
 
 The builder recomputes this audit from the two preserved point responses in `data/sources/audit/` and stores it as `provenance.source_audit`. The "Why we use IMERG" disclosure on the page shows the 25-year table from that record.
+
+## Farm greenness and night air
+
+**Greenness.** `uv run --frozen scripts/modis.py --ndvi` reads MOD13Q1 NDVI and its pixel-reliability band for the same 25 km windows as the surface temperatures, January to April composites (days 001-113, every 16 days). A 250 m pixel counts as cropland when its parent 500 m MCD12Q1 pixel `(ix // 2, iy // 2)` is class 12. A composite keeps reliability 0 or 1 pixels and is retained only when at least 30% of the site's cropland pixels are valid. Site-years are means of retained composites; the 12-site series is an equal-weight mean. NDVI is also from Terra, so the 2001-2019 refit is reported beside the full-record trend.
+
+**Night air.** `uv run --frozen scripts/tmin.py` requests MERRA-2 daily minimum air temperature at each site centre. Each site-year is the mean of its 1 January to 30 April daily minima. POWER answers with the containing 0.5° by 0.625° model cell, much coarser than a farm window. The page uses it as an orbit-free check on the MODIS night surface trend.
+
+At build time: in El Niño-start years, January to April NDVI was 0.035 lower than other years (site mean 0.597), and lower at all 12 sites. The 2001-2025 NDVI slope is +0.011 per decade, p = 0.047, but the 2001-2019 refit is +0.003, p = 0.726. Minimum air temperature changed by +0.19 °C per decade, p = 0.088, and −0.04 °C per decade over 2001-2019; neither meets the test, so the air record does not confirm the night surface warming.
 
 ## Cross-check against NASA Giovanni
 

@@ -211,3 +211,21 @@ class GiovanniTests(unittest.TestCase):
         global_box = raw.replace(b'"116.9,4.5,126.7,21.2"', b'""')
         with self.assertRaises(ValueError):
             giovanni_check(global_box, artifact["national"]["jan_apr"]["mm"], artifact["enso"]["began_el_nino"])
+
+
+class FarmCheckTests(unittest.TestCase):
+    def test_ndvi_mean_keeps_good_and_marginal_cropland_pixels_only(self):
+        ndvi = [5000, 6000, 9000, -3000, 7000]
+        quality = [0, 1, 3, 0, 0]
+        self.assertAlmostEqual(modis.ndvi_mean(ndvi, quality, [0, 1, 2]), 0.55)
+        self.assertIsNone(modis.ndvi_mean(ndvi, quality, [2, 3, 4, 3]))  # 1 of 4 valid is under 30%
+
+    def test_tmin_rejects_fill_and_averages_jan_to_apr(self):
+        from scripts import tmin
+        days = {f"{y}{m:02}{d:02}": 20.0 for y in imerg.YEARS for m in range(1, 13) for d in range(1, 32)}
+        raw = lambda values: json.dumps({"header": {"sources": ["MERRA2", "POWER"], "time_standard": "UTC", "fill_value": -999},
+                                         "parameters": {"T2M_MIN": {"units": "C"}}, "geometry": {"coordinates": [120.5, 15.5, 10]},
+                                         "properties": {"parameter": {"T2M_MIN": values}}}).encode()
+        self.assertEqual(tmin.parse(raw(days), 15.5, 120.5), [20.0] * len(imerg.YEARS))
+        with self.assertRaises(ValueError):
+            tmin.parse(raw({**days, "20240229": -999}), 15.5, 120.5)

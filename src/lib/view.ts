@@ -15,7 +15,7 @@ export const COUNTRY: Focus = { kind: 'country' };
 
 export const CHAPTER_IDS = [
   'rain', 'driest', 'wettest', 'swing', 'enso', 'enso-region', 'pantabangan',
-  'farm-enso', 'farm-night', 'trend', 'trend-where', 'trend-region', 'regions', 'next-year',
+  'farm-enso', 'farm-green', 'farm-night', 'trend', 'trend-where', 'trend-region', 'regions', 'next-year',
 ] as const;
 export type ChapterId = (typeof CHAPTER_IDS)[number];
 
@@ -40,6 +40,7 @@ export const CHAPTERS: Readonly<Record<ChapterId, ChapterSpec>> = {
   'enso-region': { mode: 'enso', year: null, focus: (a) => ({ kind: 'region', region: a.facts.focus.enso_region[0] }), unmetTrendStyle: 'faded', field: 'yellow' },
   pantabangan: { mode: 'enso', year: null, focus: (_a, cell) => ({ kind: 'cell', cell }), unmetTrendStyle: 'faded', field: 'yellow' },
   'farm-enso': { mode: 'farm', year: null, focus: country, unmetTrendStyle: 'faded', field: 'yellow' },
+  'farm-green': { mode: 'farm', year: null, focus: country, unmetTrendStyle: 'faded', field: 'yellow' },
   'farm-night': { mode: 'farm', year: null, focus: country, unmetTrendStyle: 'faded', field: 'paper' },
   trend: { mode: 'trend', year: null, focus: country, unmetTrendStyle: 'faded', field: 'paper' },
   'trend-where': { mode: 'trend', year: null, focus: country, unmetTrendStyle: 'ghost', field: 'paper' },

@@ -27,11 +27,12 @@ from shapely.ops import unary_union
 from shapely.prepared import prep
 
 if __package__:
-    from . import imerg, merra2, modis
+    from . import imerg, merra2, modis, tmin
 else:
     import imerg
     import merra2
     import modis
+    import tmin
 
 ROOT = imerg.ROOT
 SOURCES = imerg.SOURCES
@@ -514,18 +515,18 @@ def air_record(monthly, adm0, regions, flags):
             "regions": region_records}
 
 
-def temperature_record(values, flags):
+def temperature_record(values, flags, unit="c"):
     slope, mid, _, p = trend(values)
     refit = values[:19]
     refit_slope = sen_slope(refit)
     _, refit_p = mann_kendall(refit)
     gap = (statistics.mean(v for v, flag in zip(values, flags, strict=True) if flag)
            - statistics.mean(v for v, flag in zip(values, flags, strict=True) if not flag))
-    return {"c": [rnd(v, 4) for v in values], "mean_c": rnd(statistics.mean(values), 4),
-            "sen_c_decade": rnd(10 * slope, 4), "sen_mid_c": rnd(mid, 4),
+    return {unit: [rnd(v, 4) for v in values], f"mean_{unit}": rnd(statistics.mean(values), 4),
+            f"sen_{unit}_decade": rnd(10 * slope, 4), f"sen_mid_{unit}": rnd(mid, 4),
             "p": serial_p(p), "direction": direction(slope), "meets_threshold": p < ALPHA,
-            "enso_diff_c": rnd(gap, 4), "enso_direction": direction(gap),
-            "refit": {"start": 2001, "end": 2019, "sen_c_decade": rnd(10 * refit_slope, 4),
+            f"enso_diff_{unit}": rnd(gap, 4), "enso_direction": direction(gap),
+            "refit": {"start": 2001, "end": 2019, f"sen_{unit}_decade": rnd(10 * refit_slope, 4),
                       "p": serial_p(refit_p), "direction": direction(refit_slope),
                       "meets_threshold": refit_p < ALPHA}}
 
@@ -602,6 +603,27 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
                              weighted_mean_series(national_members, jan_apr_by_position), flags)
     farm = farm_record(farm_snapshot, flags, weighted_mean_series(
         [(i, weight * cropland_pct[i] / 100) for i, weight in national_members], jan_apr_by_position))
+    tmin_snapshot, tmin_source = tmin.load_snapshot()
+    if [(s["lat"], s["lon"]) for s in tmin_snapshot["sites"]] != [(s["lat"], s["lon"]) for s in farm["sites"]]:
+        raise ValueError("T2M_MIN sites differ from the MODIS farm sites")
+    night_air = [temperature_record(s["jan_apr_c"], flags) for s in tmin_snapshot["sites"]]
+    farm["night_air"] = temperature_record([statistics.mean(s["jan_apr_c"][k] for s in tmin_snapshot["sites"])
+                                            for k in range(len(YEARS))], flags)
+    farm["night_air_rising_meets"] = sum(r["direction"] == "up" and r["meets_threshold"] for r in night_air)
+    ndvi_snapshot, ndvi_source = modis.load_ndvi_snapshot()
+    if [(s["lat"], s["lon"]) for s in ndvi_snapshot["sites"]] != [(s["lat"], s["lon"]) for s in farm["sites"]]:
+        raise ValueError("NDVI sites differ from the MODIS farm sites")
+    green = []
+    for site in ndvi_snapshot["sites"]:
+        years = [[v for date, v in site["composites"].items() if date.startswith(f"A{year}") and v is not None]
+                 for year in YEARS]
+        if any(not v for v in years):
+            raise ValueError("Farm NDVI year without a retained composite")
+        green.append([statistics.mean(v) for v in years])
+    for record, values in zip(farm["sites"], green, strict=True):
+        record["green"] = temperature_record(values, flags, "ndvi")
+    farm["green"] = temperature_record([statistics.mean(s[k] for s in green) for k in range(len(YEARS))], flags, "ndvi")
+    farm["green_lower_sites"] = sum(s["green"]["enso_direction"] == "down" for s in farm["sites"])
 
     cell_stats = []
     for index in indices:
@@ -733,7 +755,7 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
         "regions": [strip_raw(record) for record in region_records],
         "cells": cells,
         "facts": facts,
-        "provenance": {"imerg": cube_record, "modis": farm_source, "merra2": air_source,
+        "provenance": {"imerg": cube_record, "modis": farm_source, "merra2": air_source, "tmin": tmin_source, "ndvi": ndvi_source,
                        "snapshots": records, "source_audit": audit,
                        "giovanni": giovanni_check(GIOVANNI.read_bytes(), national["jan_apr"]["mm"], flags)},
     }
