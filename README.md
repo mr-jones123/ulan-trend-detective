@@ -1,6 +1,6 @@
 # Ulan, measured
 
-A static data story about 25 years of NASA satellite rainfall over the Philippines, 2001 to 2025. It maps 3,735 native IMERG squares, fits one annual trend method to every square, region and the country, and compares January to April rainfall in years that began in El Niño with the other years. A 2020 MODIS cropland mask adds farmland-weighted rain and clear-sky day and night surface temperatures at 12 cropland sites. A reader can find their own square, inspect its cropland share and read all 25 annual or January to April rainfall totals.
+A static NASA data story and trend explorer for the Philippines, 2001 to 2025. It maps 3,735 native IMERG rainfall squares and compares January to April rainfall in years that began in El Niño with the other years. MERRA-2 adds modelled air temperature at two metres on its native 0.5° latitude by 0.625° longitude grid. A 2020 MODIS cropland mask adds farmland-weighted rain and clear-sky day and night surface temperatures at 12 sampled cropland sites. Variable selection keeps those different spatial footprints explicit. Two guided investigations demonstrate the comparisons, and a glossary explains the measurements and statistics.
 
 The site is one Astro page and one Python data builder. It has no backend and makes no NASA request from the browser. Every number in the prose is rendered into static HTML at build time from the same JSON file the map loads.
 
@@ -14,10 +14,11 @@ uv sync --frozen
 npm run dev
 ```
 
-Run the numerical tests, the type checker and the production build:
+Run the numerical tests, explorer transition tests, type checker, and production build. The explorer tests use the locally installed Bun runner with Node's test and assertion APIs.
 
 ```sh
 uv run --frozen python -m unittest discover -s tests
+bun test tests/view.test.ts
 npm run check
 npm run build
 npm run preview -- --host 127.0.0.1
@@ -29,7 +30,7 @@ Rebuild the artifact from the pinned snapshots. This needs no network.
 uv run --frozen --offline scripts/build_rainfall.py --offline
 ```
 
-A plain run downloads a snapshot only when its file is missing. `--refresh` downloads every small snapshot again, rebuilds the IMERG cube through `scripts/imerg.py`, and derives the farm snapshot through `scripts/modis.py`. Both acquisitions reuse hash-verified raw cache entries. The builder's `--offline` flag rejects missing snapshots without making a network request. The `uv --offline` flag alone controls dependency resolution, not Python's network access.
+A plain run downloads a snapshot only when its file is missing. `--refresh` downloads every small snapshot again and rebuilds IMERG, MODIS, and MERRA-2 snapshots from their hash-verified raw caches. The builder's `--offline` flag rejects missing snapshots without making a network request. The `uv --offline` flag alone controls dependency resolution, not Python's network access.
 
 ```sh
 uv run --frozen scripts/build_rainfall.py --refresh
@@ -57,8 +58,11 @@ Python uses Shapely 2.2 and NumPy 2.5.4. NumPy arrays support the MODIS sinusoid
 | `data/sources/oni.txt.gz` | NOAA CPC Oceanic Niño Index, `oni.ascii.txt` | US government data |
 | `data/sources/audit/*.json.gz` | NASA POWER point requests at 121.25° E, 14.5° N used only for the source audit below | NASA data |
 | `data/sources/modis-farm.json.gz` | [ORNL DAAC MODIS REST API](https://modis.ornl.gov/rst/api/v1/), derived from LP DAAC [MCD12Q1 land cover](https://doi.org/10.5067/MODIS/MCD12Q1.061), Friedl and Sulla-Menashe (2022), and [MOD11A2 surface temperature](https://doi.org/10.5067/MODIS/MOD11A2.061), Wan, Hook and Hulley (2021) | NASA open data, no credentials for subsets |
+| `data/sources/merra2-monthly.json.gz` | [NASA POWER monthly regional API](https://power.larc.nasa.gov/docs/services/api/temporal/monthly/), MERRA-2 `T2M`, UTC, 2001-2025, four overlapping bounding boxes, 223 land-intersecting native cells | NASA open data, no credentials |
 
 `data/sources/manifest.json` records each small snapshot's URL, SHA-256 of the uncompressed bytes, byte length and retrieval time. Its `imerg` entry points to `imerg-manifest.json`, which lists all 900 tile requests with their hashes. These small `.gz` files store the original response bytes. `modis-manifest.json` lists every land-cover and temperature request URL and the SHA-256 of its raw response bytes. It also records the compressed derived snapshot hash and pinned ADM0 hash. The artifact preserves both the MODIS snapshot hash and manifest hash.
+
+`merra2-manifest.json` records four exact request URLs, raw-response hashes, byte counts, retrieval timestamps, the derived monthly snapshot hash, and the pinned ADM0 hash. Raw responses remain in the ignored `data/cache/merra2/`. Cell IDs are `row-col`, where `row = latitude / 0.5` and `col = longitude / 0.625`. The snapshot contains 300 monthly means per cell. Loading it verifies the complete positive-area land-intersection cell set, including coastal cells whose centres lie outside the land boundary.
 
 The basemap is OpenFreeMap's Positron style, built on OpenMapTiles and OpenStreetMap data. MapLibre shows its attribution on the map. The project does not proxy, prefetch or download tiles. See the [OpenFreeMap terms](https://openfreemap.org/tos/).
 
@@ -83,7 +87,15 @@ Imbue and Albert Sans are under the SIL Open Font License 1.1. The page loads on
 
 **Weights.** A square's national weight is the area of its intersection with ADM0, in square degrees, times the cosine of its centre latitude. A square's weight in a region is the area of its intersection with that region and ADM0, times the same cosine. A square on a border counts toward every region it touches. National and regional annual and January to April series use these same weights. The artifact ships every region's member list and weights, so anyone can rebuild the series.
 
-**Annual trend.** For each annual series, the Sen slope is the median of the 300 pairwise slopes between years. The page reports it in mm per decade and as a percentage of the 2001-2025 mean per decade. The Mann-Kendall test uses tie-corrected variance, the continuity correction and a two-sided normal p-value, with n = 25 and no autocorrelation correction. A change "meets the test" when p < 0.05. The builder decides direction, the test result, area shares and rankings on unrounded values and writes those decisions into the artifact. The browser never re-tests a rounded p. When a printed p would round onto the wrong side of 0.05, the page prints more digits. No trend is fitted to the January to April series.
+**Rainfall trends.** Sen's slope is the median of the 300 pairwise slopes between the 25 years. The page reports rainfall slopes in mm per decade and as a percentage of the 2001-2025 mean per decade. Annual trends exist for every square, region, and the country. January to April trends exist for the country and regions, so the regional comparison can show when direction depends on the measurement window. Neither an opposite sign nor a nonzero slope establishes statistical significance.
+
+**Significance.** The Mann-Kendall test uses tie-corrected variance, the continuity correction, and a two-sided normal p-value, with n = 25 and no autocorrelation correction. A change "meets the test" when p < 0.05. The builder decides direction, test results, area shares, and rankings on unrounded values. The browser does not re-test a rounded p. When a printed p would round onto the wrong side of 0.05, the page prints more digits. A p-value measures how unusual the test statistic would be under the no-trend model and its assumptions. It is not the probability that the no-trend model is true.
+
+**Seasonal comparison.** Each January to April value covers the same calendar months in each year. This keeps the comparison window consistent, but it does not remove a fitted seasonal cycle or perform full deseasonalization. January to April is not uniformly dry across the Philippines.
+
+**Air temperature.** NASA POWER's [monthly API](https://power.larc.nasa.gov/docs/services/api/temporal/monthly/) supplies MERRA-2 `T2M`, mean air temperature at two metres, in °C and UTC. Each native cell spans 0.5° latitude by 0.625° longitude. We multiply each monthly mean by its number of calendar days, sum those products, and divide by the total days in the annual or January to April window. February has 29 days in leap years. The API's month-13 annual field is not a thirteenth month. National and regional series average native cells using their intersecting land area times the cosine of the cell's centre latitude. The trend is fitted to the weighted series, not to an average of cell slopes.
+
+Air temperature is a model reanalysis that combines observations and a physical model. It is not a direct satellite thermometer measurement. Coastal model cells include sea, and a regional average cannot recover features finer than the native grid. The explorer retains the coarse footprints rather than displaying a model value as thousands of independent rainfall-square measurements.
 
 **El Niño-start years.** A year began in El Niño when NOAA's December-to-February ONI for that year is +0.5 °C or more. The comparison reports the two group means, the difference as a percentage of the other years' mean, and how many El Niño-start years fell below the 2001-2025 mean for the same window. The map, regional rankings and land shares use January to April. National and regional annual comparisons remain as context. The comparison is descriptive and has no test.
 
@@ -95,7 +107,7 @@ Day and night temperature use separate `LST_Day_1km` and `LST_Night_1km` request
 
 **Story copy.** `src/lib/story.ts` picks every scientific sentence from a table of wordings keyed by the computed result. `assertClaims` fails the build when a claim is missing, when a sentence uses a direction word that contradicts its result, or when a heading is longer than 44 characters. Each claim renders with `data-claim` and `data-verdict`.
 
-**Artifact schema.** `ph-rain-imerg-v3` retains the annual and January to April IMERG records and adds integer `cells.cropland_pct`. `farm.rain` holds the cropland-weighted January to April rain series and El Niño comparison. `farm.day` and `farm.night` hold site-mean °C series, trends, tests, El Niño differences and 2001-2019 refits. `farm.sites` holds the 12 derived centres, window outlines, 1 km cropland pixel counts and corresponding day and night records. `farm.night_rising_meets` counts sites whose rising night slope meets the unadjusted test. `provenance.modis` pins the derived snapshot and request manifest. The El Niño and farmland map modes use January to April rain. Average, one-year and trend map modes stay annual. Farm charts reuse `chartHtml` with °C units rather than a separate chart renderer.
+**Artifact schema.** `ph-rain-imerg-v4` retains the annual and January to April IMERG records, integer `cells.cropland_pct`, and MODIS `farm` records. National and regional rainfall `jan_apr` records also contain trend estimates and test results. `farm.rain` holds cropland-weighted January to April rain. `farm.day`, `farm.night`, and `farm.sites` hold surface-temperature series, trends, El Niño differences, and the 2001-2019 refits. The `air` record holds native MERRA-2 cells and land-area-weighted national and regional air-temperature series for annual and January to April windows. Temperature differences are in °C, never percentages of Celsius values. Provenance pins each derived snapshot and request manifest.
 
 Temperature charts show each year's difference in °C from that series' 2001-2025 mean. Bars extend above or below the zero line at the mean, and fitted trends use the same anomaly scale. The caption gives the absolute mean. Scale bounds and trend labels occupy separate rows so they cannot overlap. Rainfall charts keep their zero-based mm scale.
 
@@ -113,10 +125,13 @@ These are the values in the current artifact. They come from the builder's outpu
 - Cropland-weighted January to April rain averaged 171.3 mm in El Niño-start years against 436.1 mm in other years, 60.7% less.
 - The 12-site mean daytime January to April surface temperature was 1.23 °C warmer in El Niño-start years. Its 2001-2025 slope was −0.29 °C per decade, p = 0.168, which does not meet the test.
 - Night surface temperature rose 0.26 °C per decade, p = 0.029855. Seven of the 12 sites had a rising night slope that met the test. The 2001-2019 site-mean refit was +0.22 °C per decade, p = 0.294, which does not meet the test. Night temperatures in El Niño-start years averaged 0.17 °C warmer than in other years.
+- MERRA-2 annual air temperature has a national mean of 26.0292 °C and a Sen slope of +0.2624 °C per decade, p = 0.000096. All 17 regional annual air-temperature slopes are positive and meet the unadjusted test.
+- MERRA-2 January to April air temperature has a slope of +0.0938 °C per decade, p = 0.315252. It does not meet the test. Its descriptive El Niño-start versus other-years difference is +0.3020 °C.
+- Soccsksargen is the only region with opposite annual and January to April rainfall directions. The annual slope is −1.92 mm per decade, p = 0.981367. The January to April slope is +34.84 mm per decade, p = 0.440876. Neither meets the test.
 
 ## Why the map moved from MERRA-2 to IMERG
 
-The first version of this map used NASA POWER's MERRA-2 `PRECTOTCORR`. At 121.25° E, 14.5° N, its 2020 annual total was 6,664 mm, against 2,865 mm from IMERG at the same point, a ratio of 2.33. In the other 24 years the ratio stayed between 0.92 and 1.15. MERRA-2's dry-season months in 2020 were the cause, not an aggregation error. 2020 also began in El Niño, so that one year would have bent both the trend and the El Niño comparison. The project was rebuilt on IMERG, and MERRA-2 no longer appears in the explorer.
+The first version of this map used NASA POWER's MERRA-2 `PRECTOTCORR`. At 121.25° E, 14.5° N, its 2020 annual total was 6,664 mm, against 2,865 mm from IMERG at the same point, a ratio of 2.33. In the other 24 years the ratio stayed between 0.92 and 1.15. MERRA-2's dry-season months in 2020 were the cause, not an aggregation error. That year also began in El Niño, so it would have bent both the trend and the El Niño comparison. Rainfall now uses IMERG. The separate MERRA-2 `T2M` air-temperature variable remains available. A discrepancy in rainfall does not establish that temperature is invalid.
 
 The builder recomputes this audit from the two preserved point responses in `data/sources/audit/` and stores it as `provenance.source_audit`. The "Why we use IMERG" disclosure on the page shows the 25-year table from that record.
 
@@ -126,6 +141,8 @@ Annual and January to April totals cannot show daily extremes, rainfall timing w
 
 MODIS land surface temperature is not air temperature. Clear-sky sampling excludes cloud-covered fields. The fixed 2020 mask does not describe land-use change during 2001-2025, and the 12 dense cropland sites are not a representative sample of all farms. Terra's orbit drift moved overpasses earlier after 2020, so the full-record temperature trend cannot separate climate from observation-time effects. The 2001-2019 refit is disclosed beside the full-record trend. [Peng et al. (2004)](https://doi.org/10.1073/pnas.0403720101), PNAS 101(27), 9971-9975, reported about 10% less dry-season rice grain yield per +1 °C of minimum air temperature at IRRI in Los Baños. That study is context only. This page does not estimate Philippine yield loss.
 
+MERRA-2 air temperature and MODIS clear-sky surface temperature measure different quantities over different footprints and sampling times. A difference between their trends is not proof that either dataset is wrong. The air-temperature grid cannot resolve individual fields, city blocks, pollution effects, or a local urban heat island. Celsius differences and slopes are meaningful, but percentages of Celsius temperatures are not.
+
 ## Map behaviour
 
 - The map is one MapLibre instance in a sticky column. The story chapters and the explorer share it.
@@ -133,27 +150,34 @@ MODIS land surface temperature is not air temperature. Clear-sky sampling exclud
 - On touch screens during the story, MapLibre's cooperative gestures keep one-finger page scrolling free. In the explorer every gesture works.
 - A manual zoom, pan or selection hands the map to the reader. Scrolling then updates the active chapter but leaves the camera alone. A chapter link, a "Next" link or "Back to the story view" returns the map to the story.
 - The label transform replaces every place-name `text-field` with English, then Latin-script names, keeps road shields, and removes the two `water_name` layers. The client fetches and transforms the style before it creates the map. If the style fails or takes longer than 8 seconds, a plain local style keeps the rainfall squares usable.
-- Farmland mode shows the same January to April rain gaps, with squares below 10% cropland ghosted and all 12 temperature windows outlined. The explorer reports a selected square's cropland share and offers site-mean day and night temperature charts.
-- The root element carries `data-state`, `data-basemap`, `data-phase`, `data-chapter`, `data-owner`, `data-mode`, `data-year`, `data-focus`, `data-camera` and `data-cells` for browser checks.
+- Rainfall farmland mode shows January to April rain gaps, with squares below 10% cropland ghosted and all 12 temperature windows outlined. The explorer also selects MERRA-2 air temperature or farm day and night surface temperatures. Air maps show native coarse polygons. Farm temperature maps show only sampled windows, with a site selector and an equal-site mean instead of regional farm averages.
+- Rainfall January to April trend maps show regional aggregate slopes, not per-cell slopes. Selecting a square in that view selects its assigned region. January to April average maps use a separate rainfall scale instead of annual-total breaks.
+- Guided demos have explicit Back, Next, and Exit controls. Changing a variable, year, location, or map camera exits the demo. Plain Explore links retain the current investigation. Share URLs record variable, window, mode, year when relevant, and the selected native cell, site, or region.
+- The root element carries `data-state`, `data-basemap`, `data-phase`, `data-chapter`, `data-owner`, `data-variable`, `data-window`, `data-demo`, `data-mode`, `data-year`, `data-focus`, `data-camera`, and `data-cells` for browser checks.
 
 ## Sizes
 
-- `public/data/philippines-rainfall.json` is 1,208,074 bytes, 441,318 bytes gzipped.
+- `public/data/philippines-rainfall.json` is 1,416,243 bytes, 494,868 bytes gzipped.
 - `data/sources/imerg-monthly.json.gz` is 3,008,202 bytes.
 - `data/sources/modis-farm.json.gz` is 88,912 bytes. Its 1,239-request manifest is 380,839 bytes. The two committed additions total 469,751 bytes.
 - The ignored MODIS raw cache and sidecars total 27,457,996 bytes. Acquisition made 39 land-cover requests and 1,200 temperature requests.
+- `data/sources/merra2-monthly.json.gz` is 107,473 bytes. Its four-request manifest is 1,923 bytes.
 - The five pictures total 1,715,781 bytes.
 
 ## File ownership
 
 - `scripts/imerg.py` owns IMERG acquisition, the raw cache and the monthly cube.
 - `scripts/modis.py` owns MODIS acquisition, response validation, the hash-verified raw cache, cropland mapping, deterministic site selection and composite reduction.
+- `scripts/merra2.py` owns native-grid T2M acquisition, monthly validation, day-weighted time windows, and pinned source replay.
 - `scripts/build_rainfall.py` owns snapshot pinning, weights, rainfall and temperature statistics, legend breaks, story facts and the artifact.
 - `data/sources/` holds the preserved snapshots and their manifests.
 - `src/lib/rainfall.ts` owns the artifact schema, its types and the cell grid.
 - `src/lib/story.ts` owns formatting, the claim registry and the direction-word guard.
 - `src/lib/view.ts` owns the chapter table, the view state and its reducer.
+- `src/lib/variable.ts` owns variable definitions, units, supported map modes, and native-cell or sampled-window coverage.
 - `src/lib/basemap.ts`, `src/lib/colour.ts`, `src/lib/chart.ts` and `src/lib/place.ts` own the label transform, the colour scales, the place chart and place summaries.
 - `src/scripts/main.ts` wires loading, scrolling, controls and geolocation. `src/scripts/map.ts` owns the MapLibre instance. `src/scripts/panel.ts` renders the legend and explorer. `src/scripts/compare.ts` and `src/scripts/reveal.ts` own the image slider and section entrances.
 - `src/components/Story.astro` and `src/pages/index.astro` own the markup and fixed copy. `src/styles/global.css` owns the layout.
 - `tests/test_build_rainfall.py` covers Sen and Mann-Kendall against the independent point series, ties, flat series, leap days, missing days, fill values, weighted means, same-calendar-year January to April aggregation, seasonal versus annual El Niño comparisons, the El Niño threshold, edge containment, legend breaks, tied regions, sinusoidal geolocation, nested MODIS pixels, cropland and composite-validity thresholds, site spacing and temperature refits.
+- `tests/test_merra2.py` covers native-cell coverage, bad source responses, overlapping requests, calendar-day weighting, leap years, coastline weights, unrounded aggregate trends, and pinned offline replay.
+- `tests/view.test.ts` covers variable normalization, playback, demo transitions, spatial coverage, unavailable per-cell seasonal trends, and malformed artifact rejection.

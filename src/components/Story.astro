@@ -5,6 +5,7 @@ import { farmChart, placeChart, placeOf } from '../lib/place';
 import { decodeCells, DATA_URL, type Artifact } from '../lib/rainfall';
 import { fmt, TEST_WORDS, type Claim, type Claims } from '../lib/story';
 import { CHAPTER_IDS, CHAPTERS, COUNTRY, MODES, type ChapterId, type Mode } from '../lib/view';
+import { signedC, VARIABLES } from '../lib/variable';
 
 interface Props {
   artifact: Artifact;
@@ -53,7 +54,7 @@ const CLAIMS_BY_CHAPTER: Record<ChapterId, readonly Claim[]> = {
   'next-year': [claims['next-year']],
 };
 const MODE_LABELS: Record<Mode, string> = {
-  mean: 'Average rain', year: 'One year', enso: 'El Niño, January to April', trend: '25-year change',
+  mean: 'Average', year: 'One year', enso: 'El Niño, January to April', trend: '25-year change',
   farm: 'Farmland',
 };
 const chapters = CHAPTER_IDS.map((id, index) => {
@@ -66,6 +67,9 @@ const ensoMarks = a.enso.years.map((year) => ((year - a.period.start) / (a.perio
 const shares = a.facts.shares.area;
 const pValue = fmt.pSameSideOfAlpha(n.p, n.meets_threshold, a.alpha).replace(/^p [=<] /, '');
 const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elninolanina/EN_Advisory_5.pdf';
+const air = a.air.national.annual;
+const opposite = a.regions.filter((r) => r.direction !== 'zero' && r.jan_apr.direction !== 'zero' && r.direction !== r.jan_apr.direction);
+const trendResult = (s: Pick<typeof n, 'direction' | 'sen_mm_decade' | 'p' | 'meets_threshold'>) => `${s.direction === 'up' ? 'Rising' : s.direction === 'down' ? 'Falling' : 'Flat'}, ${s.sen_mm_decade.toFixed(2)} mm per decade, ${fmt.pSameSideOfAlpha(s.p, s.meets_threshold, a.alpha)}, ${s.meets_threshold ? 'meets' : 'does not meet'} the test`;
 ---
 <section class="story" id="story" aria-labelledby="story-heading"
   data-rainfall-app data-state="loading" data-basemap="loading" data-phase="story" data-chapter="rain"
@@ -178,6 +182,16 @@ const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elni
                   ))}
                 </tbody>
               </table>
+              <table class="region-table" data-season-comparison>
+                <caption>Same regions, different time windows. Annual and January to April rainfall Sen slopes, 2001-2025. Both use the unadjusted Mann-Kendall p &lt; 0.05 test.</caption>
+                <thead><tr><th scope="col">Region</th><th scope="col">Annual</th><th scope="col">January to April</th></tr></thead>
+                <tbody>{regionsByName.map((region) => <tr>
+                  <th scope="row">{region.name}</th>
+                  <td>{trendResult(region)}</td>
+                  <td>{trendResult(region.jan_apr)}</td>
+                </tr>)}</tbody>
+              </table>
+              <p data-season-result>{opposite.length === 0 ? 'No region has opposite nonzero fitted directions between these windows.' : opposite.map((r) => `${r.name} has opposite fitted directions. ${r.meets_threshold || r.jan_apr.meets_threshold ? `Annual ${r.meets_threshold ? 'meets' : 'does not meet'} the test; January to April ${r.jan_apr.meets_threshold ? 'meets' : 'does not meet'} it.` : 'Neither window meets the test.'}`).join(' ')}</p>
             </div>
           )}
 
@@ -194,7 +208,29 @@ const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elni
 
     <section class="explorer" id="explore" aria-labelledby="explore-heading">
       <h2 id="explore-heading" class="explorer-heading">Find your square</h2>
-      <p>Tap the map, choose a region, or let your browser find you. Your location stays in your browser.</p>
+      <p>Choose what to measure, then tap its mapped cell or site. Your location stays in your browser. All results describe 2001-2025, not a forecast.</p>
+      <section class="air-finding" aria-labelledby="air-finding-heading">
+        <h3 id="air-finding-heading">What the air-temperature record says</h3>
+        <p data-air-finding>The national annual mean MERRA-2 air-temperature slope is {signedC(air.sen_c_decade)} per decade, {fmt.pSameSideOfAlpha(air.p, air.meets_threshold, a.alpha)}. It {air.meets_threshold ? 'meets' : 'does not meet'} the unadjusted p &lt; 0.05 test. This is modelled air at 2 m, not MODIS ground temperature. Different variables need not share a trend.</p>
+      </section>
+      <div class="explore-actions">
+        <label class="field"><span>Variable</span><select data-variable-select disabled>{Object.entries(VARIABLES).map(([value, metadata]) => <option value={value}>{metadata.label}</option>)}</select></label>
+        <label class="field"><span>Time window</span><select data-window-select disabled><option value="annual">Annual</option><option value="jan_apr">January to April</option></select></label>
+      </div>
+      <p class="note" data-variable-description>{VARIABLES.rain.definition} {VARIABLES.rain.coverage}</p>
+      <div class="explore-actions" aria-label="Guided demos">
+        <button class="button" type="button" data-demo-start="rain-air" disabled>Demo 1. Rain and air trends</button>
+        <button class="button" type="button" data-demo-start="farm" disabled>Demo 2. A sampled farm</button>
+      </div>
+      <section class="guided-demo" data-demo hidden aria-label="Guided demo">
+        <p data-demo-text aria-live="polite" aria-atomic="true"></p>
+        <div class="explore-actions">
+          <button class="button" type="button" data-demo-prev>Back</button>
+          <button class="button" type="button" data-demo-next>Next</button>
+          <button class="button button-quiet" type="button" data-demo-exit>Exit demo</button>
+        </div>
+        <p class="note">Changing a control or moving the map exits the demo.</p>
+      </section>
       <p class="explorer-alert" data-explorer-alert role="alert" hidden></p>
       <div class="explore-actions">
         <button type="button" class="button button-primary" data-find disabled>Find my square</button>
@@ -206,6 +242,10 @@ const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elni
           </select>
         </label>
         <button type="button" class="button button-quiet" data-country disabled>Whole country</button>
+        <label class="field" data-site-field hidden><span>Sampled cropland site</span><select data-site-select disabled>
+          <option value="">Mean of 12 sampled cropland sites</option>
+          {a.farm.sites.map((site, i) => <option value={i}>Site {i + 1}, {fmt.lat(site.lat)}, {fmt.lon(site.lon)}</option>)}
+        </select></label>
       </div>
       <fieldset class="modes" data-modes disabled>
         <legend>Show</legend>
@@ -225,33 +265,26 @@ const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elni
         <h3 id="place-heading" data-place-heading>Philippines</h3>
         <dl class="place-facts">
           <div><dt data-mean-label>Average year</dt><dd data-fact="mean">{fmt.mm(n.mean_mm)}</dd></div>
-          <div><dt>25-year change in annual rain</dt><dd data-fact="trend">{fmt.signedPct(n.sen_pct_decade)} per decade ({fmt.mm(n.sen_mm_decade)}), {n.meets_threshold ? TEST_WORDS.meets : TEST_WORDS.chance}, {fmt.pSameSideOfAlpha(n.p, n.meets_threshold, a.alpha)}</dd></div>
+          <div><dt data-fact-trend-label>25-year change in annual rain</dt><dd data-fact="trend">{fmt.signedPct(n.sen_pct_decade)} per decade ({fmt.mm(n.sen_mm_decade)}), {n.meets_threshold ? TEST_WORDS.meets : TEST_WORDS.chance}, {fmt.pSameSideOfAlpha(n.p, n.meets_threshold, a.alpha)}</dd></div>
           <div><dt>El Niño-start years, January to April</dt><dd data-fact="enso">{fmt.signedPct(n.jan_apr.enso.diff_pct)} against other years</dd></div>
           <div data-fact-row="land" hidden><dt>Land in this square</dt><dd data-fact="land"></dd></div>
           <div data-fact-row="cropland" hidden><dt>Cropland in this square</dt><dd data-fact="cropland"></dd></div>
         </dl>
-        <p class="place-help">With this box focused, arrow keys move one square at a time.</p>
+        <p class="note" data-refit hidden></p>
+        <p class="place-help">With this box focused, arrow keys select the next mapped observation in that direction. Escape returns to the country or sampled-site mean.</p>
       </section>
       <div data-place-chart="explore" set:html={nationalChart} />
       <details class="annual">
         <summary>All 25 years</summary>
         <table>
           <caption data-place-caption>Philippines, annual rainfall in mm</caption>
-          <thead><tr><th scope="col">Year</th><th scope="col">Rain</th><th scope="col">El Niño</th></tr></thead>
+          <thead><tr><th scope="col">Year</th><th scope="col" data-value-heading>Rain, mm</th><th scope="col">El Niño</th></tr></thead>
           <tbody data-place-table>
             {a.period.years.map((year, index) => (
               <tr><th scope="row">{year}</th><td>{fmt.mm(n.annual_mm[index] ?? 0)}</td><td>{a.enso.began_el_nino[index] ? 'began in El Niño' : ''}</td></tr>
             ))}
           </tbody>
         </table>
-      </details>
-      <details class="annual">
-        <summary>Farm site temperatures, January to April</summary>
-        <h3>Day surface temperature</h3>
-        <div data-claim="farm-day" data-verdict={claims['farm-day'].verdict} set:html={chartHtml(farmChart(a, 'day', claims['farm-day'].text))} />
-        <h3>Night surface temperature</h3>
-        <div data-claim="farm-night" data-verdict={claims['farm-night'].verdict} set:html={chartHtml(farmChart(a, 'night', claims['farm-night'].text))} />
-        <p class="note" data-claim="farm-limit" data-verdict={claims['farm-limit'].verdict}>{claims['farm-limit'].text}</p>
       </details>
       <p><a href={DATA_URL} download>Download the data (JSON)</a></p>
     </section>
@@ -270,6 +303,7 @@ const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elni
           {legend.classes.map((item) => <li data-swatch><span class="swatch" style={`background:${item.colour}`} /><span>{item.label}</span></li>)}
         </ol>
         <p class="legend-ends" data-legend-ends><span>{legend.ends[0]}</span><span>{legend.ends[1]}</span></p>
+        <p class="note" data-map-source>{VARIABLES.rain.source}</p>
         <p class="legend-faded" data-legend-faded hidden><span class="swatch swatch-faded" />Faded squares could be chance (p ≥ 0.05)</p>
         <p class="map-status" data-status role="status" hidden>Loading {cellCount} rainfall squares…</p>
         <p class="map-alert" data-alert role="alert" hidden>

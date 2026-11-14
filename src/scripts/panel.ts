@@ -1,9 +1,10 @@
 import { chartHtml } from '../lib/chart';
-import { legendModel } from '../lib/colour';
-import { placeChart, placeOf, type Place } from '../lib/place';
+import { explorerLegend } from '../lib/colour';
+import { ensoText, placeChart, placeOf, trendText, type Place } from '../lib/place';
 import type { Artifact, CellGrid } from '../lib/rainfall';
-import { fmt, TEST_WORDS } from '../lib/story';
-import { COUNTRY, focusKey, type ViewState } from '../lib/view';
+import { fmt } from '../lib/story';
+import { COUNTRY, demoSteps, focusKey, type ViewState } from '../lib/view';
+import { isFarm, signedC, VARIABLES, windowLabel } from '../lib/variable';
 
 export type Panel = {
   enable(): void;
@@ -51,6 +52,15 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
   const caption = one<HTMLElement>(root, '[data-place-caption]');
   const regionSelect = one<HTMLSelectElement>(root, '[data-region-select]');
   const explorerYear = one<HTMLElement>(root, '[data-explorer-year]');
+  const variableSelect = one<HTMLSelectElement>(root, '[data-variable-select]');
+  const windowSelect = one<HTMLSelectElement>(root, '[data-window-select]');
+  const siteSelect = one<HTMLSelectElement>(root, '[data-site-select]');
+  const coverage = one<HTMLElement>(root, '[data-variable-description]');
+  const refit = one<HTMLElement>(root, '[data-refit]');
+  const demo = one<HTMLElement>(root, '[data-demo]');
+  const demoText = one<HTMLElement>(root, '[data-demo-text]');
+  const demoPrev = one<HTMLButtonElement>(root, '[data-demo-prev]');
+  const demoNext = one<HTMLButtonElement>(root, '[data-demo-next]');
   const steps = [...root.querySelectorAll<HTMLElement>('[data-chapter].step')];
   const navLinks = [...root.querySelectorAll<HTMLAnchorElement>('.chapter-nav a[data-goto]')];
   const modeInputs = [...root.querySelectorAll<HTMLInputElement>('input[name="mode"]')];
@@ -62,13 +72,13 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
   let shown: { legend: string; place: string; storyYear: number | null } = { legend: '', place: '', storyYear: null };
 
   function placeFor(state: ViewState): Place {
-    return placeOf(a, grid, state.focus);
+    return placeOf(a, grid, state.focus, state.variable, state.window);
   }
 
   function renderLegend(state: ViewState) {
-    const key = `${state.mode}:${state.mode === 'year' ? state.year : ''}`;
+    const key = `${state.variable}:${state.window}:${state.mode}:${state.mode === 'year' ? state.year : ''}`;
     if (key === shown.legend) return;
-    const model = legendModel(a, state.mode, state.year);
+    const model = explorerLegend(a, state);
     legend.dataset.mode = state.mode;
     legend.setAttribute('aria-label', model.title);
     legendTitle.textContent = model.title;
@@ -93,29 +103,33 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
   function renderPlace(state: ViewState) {
     const place = placeFor(state);
     const selectedYear = state.mode === 'year' ? state.year : null;
-    const seasonal = state.mode === 'enso' || state.mode === 'farm';
+    const seasonal = state.window === 'jan_apr';
     const totals = seasonal ? place.janApr : place.annual;
-    const key = `${place.key}:${state.mode}:${selectedYear ?? ''}`;
+    const key = `${state.variable}:${state.window}:${place.key}:${state.mode}:${selectedYear ?? ''}`;
     if (key === shown.place) return;
     placeHeading.textContent = place.heading;
-    const signedMm = `${place.senPerDecade > 0 ? '+' : place.senPerDecade < 0 ? '\u2212' : ''}${fmt.mm(Math.abs(place.senPerDecade))}`;
-    facts.meanLabel.textContent = seasonal ? 'Average January to April' : 'Average year';
-    facts.mean.textContent = fmt.mm(seasonal ? place.janAprMean : place.mean);
-    facts.trend.textContent = `${fmt.signedPct(place.pctDecade)} per decade (${signedMm}), ${place.meets ? TEST_WORDS.meets : TEST_WORDS.chance}, ${fmt.pSameSideOfAlpha(place.p, place.meets, a.alpha)}`;
-    facts.enso.textContent = `${fmt.signedPct(place.ensoDiffPct)} against other years, January to April`;
+    const format = (value: number) => state.variable === 'rain' ? fmt.mm(value) : `${value.toFixed(2)} °C`;
+    facts.meanLabel.textContent = `Average ${windowLabel(state.window).toLowerCase()}`;
+    facts.mean.textContent = format(seasonal ? place.janAprMean : place.mean);
+    facts.trend.textContent = trendText(a, place);
+    facts.enso.textContent = ensoText(place);
+    one<HTMLElement>(root, '[data-fact-trend-label]').textContent = `25-year change, ${windowLabel(state.window).toLowerCase()}`;
+    one<HTMLElement>(root, '[data-value-heading]').textContent = `${VARIABLES[state.variable].label}, ${VARIABLES[state.variable].unit}`;
+    refit.hidden = place.refit === null;
+    refit.textContent = place.refit === null ? '' : `Terra drift sensitivity check, 2001-2019. ${signedC(place.refit.sen_c_decade)} per decade, ${fmt.pSameSideOfAlpha(place.refit.p, place.refit.meets_threshold, a.alpha)}, ${place.refit.meets_threshold ? 'meets' : 'does not meet'} the unadjusted p < 0.05 test. This shorter refit excludes later orbit drift but also uses fewer years. It is not a corrected full-period estimate.`;
     facts.landRow.hidden = place.landPct === null;
     facts.land.textContent = place.landPct === null ? '' : `${place.landPct}%`;
     facts.croplandRow.hidden = place.croplandPct === null;
     facts.cropland.textContent = place.croplandPct === null ? '' : `${place.croplandPct}% of land pixels, 2020`;
     exploreChart.innerHTML = chartHtml(placeChart(a, place, selectedYear, state.mode));
-    caption.textContent = `${place.heading}, ${seasonal ? 'January to April' : 'annual'} rainfall in mm`;
+    caption.textContent = `${place.heading}, ${windowLabel(state.window)} ${VARIABLES[state.variable].label.toLowerCase()} in ${VARIABLES[state.variable].unit}`;
     table.replaceChildren(...a.period.years.map((year, index) => {
       const row = document.createElement('tr');
       const th = document.createElement('th');
       th.scope = 'row';
       th.textContent = String(year);
       const mm = document.createElement('td');
-      mm.textContent = fmt.mm(totals[index] ?? 0);
+      mm.textContent = format(totals[index] ?? 0);
       const enso = document.createElement('td');
       enso.textContent = a.enso.began_el_nino[index] ? 'began in El Niño' : '';
       row.append(th, mm, enso);
@@ -135,7 +149,7 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
   return {
     enable() {
       root.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLFieldSetElement>(
-        '[data-find], [data-country], [data-region-select], [data-modes], [data-year-input], [data-play]',
+        '[data-find], [data-country], [data-region-select], [data-modes], [data-year-input], [data-play], [data-variable-select], [data-window-select], [data-site-select], [data-demo-start]',
       ).forEach((control) => { control.disabled = false; });
       document.querySelectorAll<HTMLButtonElement>('[data-find]').forEach((button) => { button.disabled = false; });
     },
@@ -146,6 +160,28 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
       ds.owner = state.owner;
       ds.mode = state.mode;
       ds.year = String(state.year);
+      ds.variable = state.variable;
+      ds.window = state.window;
+      ds.demo = state.demo ? `${state.demo.id}:${state.demo.step}` : '';
+      variableSelect.value = state.variable;
+      windowSelect.value = state.window;
+      windowSelect.disabled = isFarm(state.variable) || state.mode === 'enso' || state.mode === 'farm';
+      regionSelect.disabled = isFarm(state.variable);
+      siteSelect.closest<HTMLElement>('[data-site-field]')!.hidden = !isFarm(state.variable);
+      one<HTMLElement>(root, '[data-country]').textContent = isFarm(state.variable) ? 'Mean of 12 sites' : 'Whole country';
+      siteSelect.value = state.focus.kind === 'site' ? String(state.focus.site) : '';
+      const metadata = VARIABLES[state.variable];
+      coverage.textContent = `${metadata.definition} ${metadata.coverage} Source: ${metadata.source}.`;
+      one<HTMLElement>(root, '[data-map-source]').textContent = metadata.source;
+      mapElement.setAttribute('aria-label', `${metadata.label} map. ${metadata.coverage} Arrow keys pan; select observations in the explorer.`);
+      demo.hidden = state.demo === null;
+      if (state.demo) {
+        const steps = demoSteps({ artifact: a, pantabangan: grid.fromId(a.facts.focus.pantabangan_cell)! }, state.demo.id);
+        const place = placeFor(state);
+        demoText.textContent = `Step ${state.demo.step + 1} of ${steps.length}. ${steps[state.demo.step]!.text} ${place.heading}. ${state.mode === 'enso' ? ensoText(place) : trendText(a, place)}`;
+        demoPrev.disabled = state.demo.step === 0;
+        demoNext.disabled = state.demo.step === steps.length - 1;
+      }
       ds.focus = focusKey(state.focus, grid.id);
       for (const step of steps) step.toggleAttribute('data-active', state.phase === 'story' && step.dataset.chapter === state.chapter);
       for (const link of navLinks) {
@@ -154,7 +190,12 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
       }
       mapElement.setAttribute('aria-describedby', state.phase === 'explore' ? 'explore-heading' : `h-${state.chapter}`);
       back.hidden = !(state.phase === 'story' && state.owner === 'reader');
-      for (const input of modeInputs) input.checked = input.value === state.mode;
+      for (const input of modeInputs) {
+        input.checked = input.value === state.mode;
+        const supported = metadata.modes.some((mode) => mode === input.value);
+        input.disabled = !supported;
+        input.closest<HTMLElement>('label')!.hidden = !supported;
+      }
       explorerYear.hidden = state.mode !== 'year';
       const yearText = a.enso.years.includes(state.year) ? `${state.year}, began in El Niño` : String(state.year);
       for (const input of yearInputs) input.value = String(state.year);
@@ -175,9 +216,7 @@ export function createPanel(root: HTMLElement, a: Artifact, grid: CellGrid): Pan
         const link = document.createElement('a');
         link.href = '#explore';
         link.textContent = 'Open in the explorer';
-        const summary = state.mode === 'enso' || state.mode === 'farm'
-          ? `${fmt.mm(place.janAprMean)} in an average January to April, ${fmt.signedPct(place.ensoDiffPct)} in El Niño-start years against other years.`
-          : `${fmt.mm(place.mean)} in an average year, ${fmt.signedPct(place.pctDecade)} per decade.`;
+        const summary = state.mode === 'enso' || state.mode === 'farm' ? ensoText(place) : trendText(a, place);
         readout.append(strong, ` ${summary} `, link);
       }
     },

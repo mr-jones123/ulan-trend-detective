@@ -307,7 +307,7 @@ export function buildClaims(a: Artifact): Claims {
       heading: 'PAGASA expects El Niño into 2027',
       text: `PAGASA's El Niño Advisory No. 5 says the current El Niño may last into the first half of 2027, which includes January to April. ${nextYear.text}` },
     'season-window': { id: 'season-window', verdict: 'fixed', direction: 'none',
-      text: "January to April covers much of the country's dry cropping season. It is not a dry season everywhere. Eastern Type II areas, including Eastern Visayas and Caraga, are wet then." },
+      text: "We compare the same January to April months each year. This controls the comparison window, not all seasonal influences; it is not full seasonal adjustment or deseasonalization. These months are not uniformly dry nationwide. Eastern Type II areas, including Eastern Visayas and Caraga, are wet then." },
     'pantabangan-context': { id: 'pantabangan-context', verdict: 'fixed', direction: 'none',
       text: 'In April 2024, during a drought, low water in Pantabangan Lake in Nueva Ecija exposed more of the old town, submerged when the reservoir was built. Drag the line to compare 29 April 2023 with 15 April 2024.' },
     'pantabangan-limit': { id: 'pantabangan-limit', verdict: 'fixed', direction: 'none',

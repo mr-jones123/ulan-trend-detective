@@ -1,6 +1,7 @@
 import type { ExpressionSpecification } from '@maplibre/maplibre-gl-style-spec';
 import type { Artifact } from './rainfall';
-import type { Mode } from './view';
+import type { Mode, ViewState } from './view';
+import { VARIABLES, windowLabel, type Window } from './variable';
 
 export const DIVERGING = ['#8c510a', '#bf812d', '#dfc27d', '#f6e8c3', '#c7eae5', '#80cdc1', '#35978f', '#01665e'] as const;
 export const SEQUENTIAL = ['#eef3f1', '#cfe3df', '#a3cec7', '#6fb2ab', '#3f9294', '#1f6f79', '#0b4a5a'] as const;
@@ -16,9 +17,9 @@ const MINUS = '\u2212';
 const signed = (value: number) => (value === 0 ? '0' : `${value > 0 ? '+' : MINUS}${Math.abs(value)}`);
 const WHOLE = new Intl.NumberFormat('en-US');
 
-function breaksFor(a: Artifact, mode: Mode): readonly number[] {
+function breaksFor(a: Artifact, mode: Mode, window: Window = 'annual'): readonly number[] {
   switch (mode) {
-    case 'mean': return a.legend.mean_mm;
+    case 'mean': return window === 'jan_apr' ? a.legend.jan_apr_mean_mm : a.legend.mean_mm;
     case 'year': return a.legend.year_pct;
     case 'enso': return a.legend.enso_pct;
     case 'farm': return a.legend.enso_pct;
@@ -44,8 +45,8 @@ const TITLES: Record<Mode, (year: number) => string> = {
   trend: () => 'Change per decade, % of the average year',
 };
 
-export function legendModel(a: Artifact, mode: Mode, year: number): LegendModel {
-  const breaks = breaksFor(a, mode);
+export function legendModel(a: Artifact, mode: Mode, year: number, window: Window = 'annual'): LegendModel {
+  const breaks = breaksFor(a, mode, window);
   const classes = breaks.length - 1;
   const palette = paletteFor(mode, classes);
   const label = (value: number) => (mode === 'mean' ? WHOLE.format(value) : signed(value));
@@ -70,9 +71,36 @@ const PROPERTY: Record<Mode, ExpressionSpecification> = {
   trend: ['get', 'trend'],
 };
 
-export function colourExpression(a: Artifact, mode: Mode): ExpressionSpecification {
-  const breaks = breaksFor(a, mode);
+export function colourExpression(a: Artifact, mode: Mode, window: Window = 'annual'): ExpressionSpecification {
+  const breaks = breaksFor(a, mode, window);
   const palette = paletteFor(mode, breaks.length - 1);
   const stops = breaks.slice(1, -1).flatMap((value, index): (number | string)[] => [value, palette[index + 1] ?? '#000000']);
   return ['step', PROPERTY[mode], palette[0] ?? '#000000', ...stops];
+}
+
+const TEMP_MEAN = [10, 20, 24, 26, 28, 30, 34, 45];
+const TEMP_CHANGE = [-2, -1, -0.5, -0.2, 0, 0.2, 0.5, 1, 2];
+export function explorerLegend(a: Artifact, state: ViewState): LegendModel {
+  if (state.variable === 'rain') {
+    const model = legendModel(a, state.mode, state.year, state.window);
+    if (state.window === 'annual' || state.mode === 'enso' || state.mode === 'farm') return model;
+    return { ...model, title: state.mode === 'trend' ? 'Regional January to April change per decade, % of regional average. Cell trends unavailable.'
+      : state.mode === 'year' ? `${state.year} January to April against each cell's 2001-2025 average, %`
+      : 'Average January to April, 2001-2025, mm' };
+  }
+  const breaks = state.mode === 'mean' ? TEMP_MEAN : TEMP_CHANGE;
+  const palette = state.mode === 'mean' ? SEQUENTIAL : DIVERGING;
+  const measure = state.mode === 'mean' ? '2001-2025 mean, °C' : state.mode === 'trend' ? 'change per decade, °C'
+    : state.mode === 'enso' ? 'El Niño-start years minus other years, °C' : `${state.year} minus 2001-2025 mean, °C`;
+  return {
+    title: `${VARIABLES[state.variable].label}. ${windowLabel(state.window)} ${measure}`,
+    classes: palette.map((colour, i) => ({ colour, label: i === 0 ? `under ${breaks[1]}` : i === palette.length - 1 ? `${breaks[i]} or more` : `${breaks[i]} to ${breaks[i + 1]}` })),
+    ends: ['cooler', 'warmer'],
+  };
+}
+
+export function temperatureColour(mode: Mode): ExpressionSpecification {
+  const breaks = mode === 'mean' ? TEMP_MEAN : TEMP_CHANGE;
+  const palette = mode === 'mean' ? SEQUENTIAL : DIVERGING;
+  return ['step', ['get', 'value'], palette[0]!, ...breaks.slice(1, -1).flatMap((v, i) => [v, palette[i + 1]!])];
 }

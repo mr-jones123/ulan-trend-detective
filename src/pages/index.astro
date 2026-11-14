@@ -134,15 +134,30 @@ const januarySquares = artifact.period.years.map((year, index) => {
         <ol class="staircase">
           <li data-reveal><p class="stair">First, satellites watch the rain.</p><p>IMERG Final Run merges microwave and infrared satellite estimates with monthly rain gauges on a 0.1° grid.</p></li>
           <li data-reveal><p class="stair">Then we add each square's days.</p><p data-claim={claims['method-totals'].id} data-verdict={claims['method-totals'].verdict}>{claims['method-totals'].text}</p></li>
+          <li data-reveal><p class="stair">We read the air separately.</p><p>MERRA-2 T2M estimates mean air temperature at 2 m using a model and observations. We weight monthly means by each month's calendar days, including leap days, to form annual and January to April means. The map keeps its native {artifact.air.grid.lat_step}° latitude by {artifact.air.grid.lon_step}° longitude cells. National and regional averages use the land area intersecting each cell, with a latitude correction, not smaller invented pixels. <a href="https://power.larc.nasa.gov/docs/services/api/temporal/monthly/">NASA POWER monthly API</a> and <a href="https://gmao.gsfc.nasa.gov/merra/">NASA MERRA-2</a> describe the source.</p></li>
           <li data-reveal><p class="stair">Then we find the farms.</p><p>MODIS land cover for {artifact.farm.mask_year} marks cropland on a 500 m grid. We keep the {artifact.farm.sites.length} densest cropland areas, at least 1° apart, and read MODIS surface temperature over their cropland, by day and by night, for every 8-day window from January to April. Each site gets one daytime and one night value per year.</p></li>
           <li data-reveal><p class="stair">We take the middle slope.</p><p>Sen's slope is the median of the 300 slopes between every pair of years, for each square's rain and each farm's temperature, so one unusual year moves it less than it would move a straight-line fit.</p></li>
-          <li data-reveal><p class="stair">Last, we ask if chance could do it.</p><p>The Mann-Kendall test gives p. Below 0.05, a change meets the test. The test assumes that years are independent.</p></li>
+          <li data-reveal><p class="stair">Last, we test the ordering of years.</p><p>The Mann-Kendall test gives p. Under its no-monotonic-trend model and assumptions, p measures how unusual a test statistic at least this extreme would be. Below 0.05 meets our test. It is not the probability that the no-trend model is true, or that chance caused the result. The test assumes independent years.</p></li>
         </ol>
         <section class="method-notes" aria-labelledby="notes-heading">
           <div class="notes-heading">
             <h2 id="notes-heading">The fine print</h2>
             <p>What these numbers can and cannot say.</p>
           </div>
+          <details class="glossary" data-glossary>
+            <summary>Plain-language glossary</summary>
+            <dl>
+              <dt>Precipitation, in millimetres</dt><dd>Rainfall totals measure the depth of collected water. One millimetre equals one litre over one square metre. Annual totals add the year's rain; January to April totals add only those months.</dd>
+              <dt>Mean air temperature at 2 m, T2M</dt><dd>The average temperature of air two metres above the ground. MERRA-2 is a reanalysis, a reconstruction that combines observations with a weather model. Its coarse cells do not resolve every town or mountain.</dd>
+              <dt>MODIS surface temperature</dt><dd>The satellite estimates the temperature of the ground surface when skies are clear enough to observe it. Day and night observations are separate. This is not the temperature of the air or a daily maximum or minimum.</dd>
+              <dt>Cropland snapshot</dt><dd>The 2020 land-cover map identifies pixels classified as cropland. It does not measure crop yield, irrigation or changing farm boundaries. The 12 sites are a sample, not all Philippine farms.</dd>
+              <dt>Anomaly and baseline</dt><dd>An anomaly is a difference from a reference average. Here the baseline is 2001-2025 for the same place, variable and time window. Rain anomalies are percentages of that mean; temperature anomalies are differences in °C, never Celsius percentages.</dd>
+              <dt>Sen slope</dt><dd>Take the slope between every pair of years and choose the middle one. We report that fitted change per decade. It describes the record, not the amount that every year changes or a forecast.</dd>
+              <dt>Mann-Kendall p-value</dt><dd>This test looks for a consistently rising or falling ordering of values. Assuming no monotonic trend and independent years, p measures how unusual a statistic at least this extreme would be. It is not the probability that the assumption is true. Our unadjusted 0.05 cutoff does not correct for testing many locations.</dd>
+              <dt>ONI and El Niño-start years</dt><dd>ONI measures a three-month sea-surface-temperature anomaly in the tropical Pacific. This page groups years whose December-January-February ONI is at least +0.5 °C. That simple comparison rule is not the official full episode definition, which also considers persistence.</dd>
+            </dl>
+          </details>
+          <p class="note" data-season-method>Comparing January to April every year holds the calendar window constant. It is not full seasonal adjustment or deseasonalization. These months are not uniformly dry across the Philippines, and weather, ENSO timing and other influences still vary within them.</p>
           <div class="notes-columns">
             <p data-claim={claims['method-weights'].id} data-verdict={claims['method-weights'].verdict}>{claims['method-weights'].text}</p>
             <p data-claim={claims['method-enso'].id} data-verdict={claims['method-enso'].verdict}>{claims['method-enso'].text}</p>
@@ -153,7 +168,7 @@ const januarySquares = artifact.period.years.map((year, index) => {
               <summary>Why we use IMERG</summary>
               <p>We first built this map from NASA POWER's MERRA-2 rainfall, and checked it against IMERG at one point near Manila.</p>
               <p data-claim={claims.audit.id} data-verdict={claims.audit.verdict}>{claims.audit.text}</p>
-              <p>{artifact.enso.years.includes(audit.max_ratio_year) ? `${audit.max_ratio_year} began in El Niño, so that one year would have bent both the trend and the El Niño comparison.` : 'That one year would have bent the trend.'} We rebuilt everything on IMERG. MERRA-2 appears nowhere else on this page.</p>
+              <p>{artifact.enso.years.includes(audit.max_ratio_year) ? `${audit.max_ratio_year} began in El Niño, so that one year would have bent both the trend and the El Niño comparison.` : 'That one year would have bent the trend.'} We rebuilt the rainfall analysis on IMERG. We do not use MERRA-2 rainfall elsewhere on this page. The separate T2M air-temperature analysis uses MERRA-2. This one-point rainfall audit neither invalidates the whole reanalysis nor establishes agreement between the datasets.</p>
               <table class="audit-table">
                 <caption>Annual rain at {fmt.lon(audit.point[0])}, {fmt.lat(audit.point[1])}, from NASA POWER point requests</caption>
                 <thead><tr><th scope="col">Year</th><th scope="col">MERRA-2</th><th scope="col">IMERG</th><th scope="col">Ratio</th></tr></thead>
@@ -174,7 +189,8 @@ const januarySquares = artifact.period.years.map((year, index) => {
           <ul>
             <li class="source-kind">Data</li>
             <li><a href="https://gpm.nasa.gov/data/imerg">NASA GPM IMERG Final Run</a></li>
-            <li><a href="https://power.larc.nasa.gov/docs/methodology/data/sources/">NASA POWER daily API</a></li>
+            <li><a href="https://power.larc.nasa.gov/docs/services/api/temporal/monthly/">NASA POWER monthly API, MERRA-2 T2M</a></li>
+            <li><a href="https://gmao.gsfc.nasa.gov/merra/">NASA MERRA-2 reanalysis</a></li>
             <li><a href="https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/ensostuff/ONI_v5.php">NOAA CPC Oceanic Niño Index</a></li>
             <li><a href="https://www.geoboundaries.org/">geoBoundaries PHL ADM0 and ADM1</a>, <a href="https://creativecommons.org/licenses/by/3.0/igo/">CC BY 3.0 IGO</a></li>
             <li><a href="https://doi.org/10.5067/MODIS/MCD12Q1.061">LP DAAC MCD12Q1 land cover</a>, Friedl and Sulla-Menashe (2022)</li>

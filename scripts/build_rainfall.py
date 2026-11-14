@@ -27,9 +27,10 @@ from shapely.ops import unary_union
 from shapely.prepared import prep
 
 if __package__:
-    from . import imerg, modis
+    from . import imerg, merra2, modis
 else:
     import imerg
+    import merra2
     import modis
 
 ROOT = imerg.ROOT
@@ -329,6 +330,7 @@ def series_record(values, jan_apr, flags):
     slope, mid, s, p = trend(values)
     enso = enso_comparison(values, flags, mean)
     jan_apr_mean = math.fsum(jan_apr) / len(jan_apr)
+    jan_slope, jan_mid, _, jan_p = trend(jan_apr)
     jan_apr_enso = enso_comparison(jan_apr, flags, jan_apr_mean)
     wettest = max(range(len(values)), key=lambda k: (values[k], -k))
     driest = min(range(len(values)), key=lambda k: (values[k], k))
@@ -342,6 +344,10 @@ def series_record(values, jan_apr, flags):
         "enso": comparison_record(enso),
         "jan_apr": {"mm": [rnd(v, 1) for v in jan_apr], "mean_mm": rnd(jan_apr_mean, 1),
                     "anomaly_pct": [rnd(100 * (v - jan_apr_mean) / jan_apr_mean, 2) for v in jan_apr],
+                    "sen_mm_decade": rnd(10 * jan_slope, 2),
+                    "sen_pct_decade": rnd(1000 * jan_slope / jan_apr_mean, 3),
+                    "sen_mid_mm": rnd(jan_mid, 1), "p": serial_p(jan_p),
+                    "direction": direction(jan_slope), "meets_threshold": jan_p < ALPHA,
                     "enso": comparison_record(jan_apr_enso)},
         "wettest": {"year": YEARS[wettest], "mm": rnd(values[wettest], 1),
                     "anomaly_pct": rnd(100 * (values[wettest] - mean) / mean, 2)},
@@ -429,6 +435,53 @@ def strip_raw(record):
     return {key: value for key, value in record.items() if not key.startswith("_")}
 
 
+def air_series_record(values, flags):
+    slope, mid, _, p = trend(values)
+    gap = (statistics.mean(v for v, flag in zip(values, flags, strict=True) if flag)
+           - statistics.mean(v for v, flag in zip(values, flags, strict=True) if not flag))
+    return {"c": [rnd(v, 4) for v in values], "mean_c": rnd(statistics.mean(values), 4),
+            "sen_c_decade": rnd(10 * slope, 4), "sen_mid_c": rnd(mid, 4),
+            "p": serial_p(p), "direction": direction(slope), "meets_threshold": p < ALPHA,
+            "enso_diff_c": rnd(gap, 4), "enso_direction": direction(gap)}
+
+
+def air_record(monthly, adm0, regions, flags):
+    if monthly.keys() != merra2.land_cells(adm0):
+        raise ValueError("Air temperature cells differ from the ADM0 intersecting grid")
+    indices = sorted(monthly)
+    annual = {i: merra2.period_means(monthly[index], range(1, 13)) for i, index in enumerate(indices)}
+    jan_apr = {i: merra2.period_means(monthly[index], range(1, 5)) for i, index in enumerate(indices)}
+    cells, members = [], [[] for _ in regions]
+    prepared = [(prep(region["land"]), region["land"]) for region in regions]
+    weights = []
+    for i, (row, col) in enumerate(indices):
+        lat, lon = row * merra2.LAT_STEP, col * merra2.LON_STEP
+        bounds = merra2.cell_bounds(row, col)
+        cell = box(*bounds)
+        scale = math.cos(math.radians(lat))
+        weight = adm0.intersection(cell).area * scale
+        weights.append((i, weight))
+        for r, (fast, land) in enumerate(prepared):
+            area = land.intersection(cell).area if fast.intersects(cell) else 0.0
+            if area > 0:
+                members[r].append((i, area * scale))
+        cells.append({"id": f"{row}-{col}", "lat": lat, "lon": lon, "bounds": bounds,
+                      "weight": significant(weight), "annual": air_series_record(annual[i], flags),
+                      "jan_apr": air_series_record(jan_apr[i], flags)})
+    if not weights or any(not member for member in members):
+        raise ValueError("Every national and regional air series requires positive land area")
+    region_records = [
+        {"id": region["id"], "members": [i for i, _ in member],
+         "weights": [significant(weight) for _, weight in member],
+         "annual": air_series_record(weighted_mean_series(member, annual), flags),
+         "jan_apr": air_series_record(weighted_mean_series(member, jan_apr), flags)}
+        for region, member in zip(regions, members, strict=True)]
+    return {"grid": merra2.GRID, "source": merra2.SOURCE, "cells": cells,
+            "national": {"annual": air_series_record(weighted_mean_series(weights, annual), flags),
+                         "jan_apr": air_series_record(weighted_mean_series(weights, jan_apr), flags)},
+            "regions": region_records}
+
+
 def temperature_record(values, flags):
     slope, mid, _, p = trend(values)
     refit = values[:19]
@@ -484,6 +537,8 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
 
     indices = sorted(annual)
     farm_snapshot, farm_source = modis.load_snapshot()
+    air_monthly, air_source = merra2.load_snapshot(adm0)
+    air = air_record(air_monthly, adm0, regions, flags)
     if set(farm_snapshot["cells"]) != {f"{row}-{col}" for row, col in indices}:
         raise ValueError("Cropland snapshot must cover every IMERG square")
     cropland_pct = [farm_snapshot["cells"][f"{row}-{col}"] for row, col in indices]
@@ -592,6 +647,7 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
 
     legend = {
         "mean_mm": mean_breaks([c["mean"] for c in cell_stats], land_weight),
+        "jan_apr_mean_mm": mean_breaks([c["jan_apr_mean"] for c in cell_stats], land_weight),
         "trend_pct": diverging_breaks([1000 * c["slope"] / c["mean"] for c in cell_stats], land_weight),
         "enso_pct": diverging_breaks([c["enso"] for c in cell_stats], land_weight),
         "year_pct": diverging_breaks(
@@ -625,7 +681,7 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
                   for name in ("adm0", "adm1")}
     api_versions = sorted({entry["version"] for entry in cube_record["api"]})
     return {
-        "schema": "ph-rain-imerg-v3",
+        "schema": "ph-rain-imerg-v4",
         "period": {"start": YEARS[0], "end": YEARS[-1], "years": list(YEARS)},
         "alpha": ALPHA,
         "source": {"provider": "NASA POWER", "dataset": "GPM IMERG Final Run", "parameter": "IMERG_PRECTOT",
@@ -641,10 +697,12 @@ def build_artifact(raws, records, annual, jan_apr, cube_record):
         "legend": legend,
         "national": strip_raw(national),
         "farm": farm,
+        "air": air,
         "regions": [strip_raw(record) for record in region_records],
         "cells": cells,
         "facts": facts,
-        "provenance": {"imerg": cube_record, "modis": farm_source, "snapshots": records, "source_audit": audit},
+        "provenance": {"imerg": cube_record, "modis": farm_source, "merra2": air_source,
+                       "snapshots": records, "source_audit": audit},
     }
 
 
@@ -661,7 +719,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--refresh", action="store_true",
-                      help="Refresh small snapshots and rebuild IMERG and MODIS from verified caches")
+                      help="Refresh small snapshots and rebuild IMERG, MERRA-2 and MODIS from verified caches")
     mode.add_argument("--offline", action="store_true", help="Require pinned snapshots; never use the network")
     args = parser.parse_args()
     try:
@@ -674,6 +732,10 @@ def main():
             if args.offline:
                 raise ValueError("Missing offline MODIS snapshot")
             modis.build_snapshot(imerg.load_boundary())
+        if args.refresh or not merra2.SNAPSHOT.exists():
+            if args.offline:
+                raise ValueError("Missing offline MERRA-2 snapshot")
+            merra2.build_snapshot(imerg.load_boundary())
         artifact = build_artifact(raws, records, annual, jan_apr, cube_record)
         content = publish(raws, records, cube_record, artifact)
     except (OSError, ValueError, KeyError, TypeError) as error:
@@ -686,6 +748,7 @@ def main():
         "national": {key: national[key] for key in ("mean_mm", "sen_mm_decade", "sen_pct_decade", "p",
                                                      "direction", "meets_threshold", "enso", "jan_apr")},
         "farm": {key: artifact["farm"][key] for key in ("rain", "day", "night", "night_rising_meets")},
+        "air": {"cells": len(artifact["air"]["cells"]), "national": artifact["air"]["national"]},
         "facts": artifact["facts"], "legend": artifact["legend"],
     }, indent=2, ensure_ascii=False))
     return 0

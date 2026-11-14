@@ -12,7 +12,7 @@ const snapshot = z.object({
   url: z.url(), file: z.string().min(1), sha256, bytes: z.int().positive(),
   retrieved_at: z.iso.datetime({ offset: true }),
 });
-const bbox = z.tuple([z.number(), z.number(), z.number(), z.number()])
+const bbox = z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90), z.number().min(-180).max(180), z.number().min(-90).max(90)])
   .refine(([west, south, east, north]) => west < east && south < north, 'Bounds must have positive area');
 const yearly = z.array(z.number()).length(YEAR_COUNT);
 const direction = z.enum(['up', 'down', 'zero']);
@@ -36,7 +36,11 @@ const series = z.object({
   direction,
   meets_threshold: z.boolean(),
   enso: ensoComparison,
-  jan_apr: z.object({ mm: yearly, mean_mm: z.number().positive(), anomaly_pct: yearly, enso: ensoComparison }),
+  jan_apr: z.object({
+    mm: yearly, mean_mm: z.number().positive(), anomaly_pct: yearly, enso: ensoComparison,
+    sen_mm_decade: z.number(), sen_pct_decade: z.number(), sen_mid_mm: z.number(),
+    p: z.number().min(0).max(1), direction, meets_threshold: z.boolean(),
+  }),
   wettest: yearPoint,
   driest: yearPoint,
 });
@@ -67,10 +71,13 @@ const diverging = z.array(z.number()).length(9)
 const sign = z.union([z.literal(-1), z.literal(0), z.literal(1)]);
 const ranked = z.array(z.object({ id: regionId, share }));
 
-const temperature = z.object({
-  c: yearly, mean_c: z.number(), sen_c_decade: z.number(), sen_mid_c: z.number(),
+const airSeries = z.object({
+  c: z.array(z.number().min(-100).max(80)).length(YEAR_COUNT),
+  mean_c: z.number().min(-100).max(80), sen_c_decade: z.number(), sen_mid_c: z.number(),
   p: z.number().min(0).max(1), direction, meets_threshold: z.boolean(),
   enso_diff_c: z.number(), enso_direction: direction,
+});
+const temperature = airSeries.extend({
   refit: z.object({
     start: z.literal(2001), end: z.literal(2019), sen_c_decade: z.number(),
     p: z.number().min(0).max(1), direction, meets_threshold: z.boolean(),
@@ -78,7 +85,7 @@ const temperature = z.object({
 });
 
 export const rainfallSchema = z.object({
-  schema: z.literal('ph-rain-imerg-v3'),
+  schema: z.literal('ph-rain-imerg-v4'),
   period: z.object({ start: z.literal(FIRST_YEAR), end: z.literal(2025), years: z.array(z.int()).length(YEAR_COUNT) }),
   alpha: z.literal(0.05),
   source: z.object({
@@ -100,15 +107,32 @@ export const rainfallSchema = z.object({
   }),
   legend: z.object({
     mean_mm: z.array(z.number()).min(3).max(8), trend_pct: diverging, enso_pct: diverging, year_pct: diverging,
+    jan_apr_mean_mm: z.array(z.number()).min(3).max(8),
   }),
   national: series,
+  air: z.object({
+    grid: z.object({ lat_step: z.literal(0.5), lon_step: z.literal(0.625) }),
+    source: z.object({
+      provider: z.literal('NASA POWER'), dataset: z.literal('MERRA-2'), parameter: z.literal('T2M'),
+      units: z.literal('C'), time_standard: z.literal('UTC'), endpoint: z.url(),
+    }),
+    cells: z.array(z.object({
+      id: z.string().regex(/^\d+-\d+$/), lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180),
+      bounds: bbox, weight: z.number().positive(), annual: airSeries, jan_apr: airSeries,
+    })).min(1),
+    national: z.object({ annual: airSeries, jan_apr: airSeries }),
+    regions: z.array(z.object({
+      id: regionId, members: z.array(z.int().nonnegative()).min(1),
+      weights: z.array(z.number().positive()).min(1), annual: airSeries, jan_apr: airSeries,
+    })).length(17),
+  }),
   farm: z.object({
     mask_year: z.literal(2020), map_threshold_pct: z.literal(10),
     rain: z.object({ mm: yearly, mean_mm: z.number().positive(), enso: ensoComparison }),
     day: temperature, night: temperature, night_rising_meets: z.int().min(0).max(12),
     sites: z.array(z.object({
-      lat: z.number(), lon: z.number(), cropland_pixels: z.int().positive(),
-      outline: z.array(z.tuple([z.number(), z.number()])).length(5),
+      lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180), cropland_pixels: z.int().positive(),
+      outline: z.array(z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)])).length(5),
       day: temperature, night: temperature,
     })).length(12),
   }),
@@ -156,6 +180,15 @@ export const rainfallSchema = z.object({
     }),
   }),
   provenance: z.object({
+    merra2: z.object({
+      file: z.string().min(1), sha256, bytes: z.int().positive(), manifest: z.string().min(1),
+      manifest_sha256: sha256, manifest_bytes: z.int().positive(), requests: z.int().positive(), boundary_sha256: sha256,
+      source: z.object({
+        provider: z.literal('NASA POWER'), dataset: z.literal('MERRA-2'), parameter: z.literal('T2M'),
+        units: z.literal('C'), time_standard: z.literal('UTC'), endpoint: z.url(),
+      }),
+      api: z.array(z.object({ name: z.string().min(1), version: z.string().min(1) })).min(1),
+    }),
     imerg: z.object({ file: z.string(), sha256, bytes: z.int().positive(), manifest: z.string(), manifest_sha256: sha256 }).loose(),
     modis: z.object({ file: z.string(), sha256, bytes: z.int().positive(), manifest_sha256: sha256,
       requests: z.int().positive(), boundary_sha256: sha256 }),
@@ -186,8 +219,31 @@ export const rainfallSchema = z.object({
     }
   }
   const ids = new Set(data.regions.map((r) => r.id));
+  if (ids.size !== data.regions.length || data.period.years.some((year, i) => year !== FIRST_YEAR + i)) {
+    context.addIssue({ code: 'custom', message: 'Regions must be unique and years consecutive' });
+  }
+  const airIds = new Set(data.air.cells.map((cell) => cell.id));
+  if (airIds.size !== data.air.cells.length || new Set(data.air.regions.map((r) => r.id)).size !== ids.size) {
+    context.addIssue({ code: 'custom', path: ['air'], message: 'Air cells and regions must have unique IDs' });
+  }
+  for (const cell of data.air.cells) {
+    const [w, s, e, n] = cell.bounds;
+    if (cell.id !== `${cell.lat / 0.5}-${cell.lon / 0.625}`) {
+      context.addIssue({ code: 'custom', path: ['air', 'cells'], message: 'Air IDs must identify native grid coordinates' });
+    }
+    if (Math.abs(e - w - 0.625) > 1e-6 || Math.abs(n - s - 0.5) > 1e-6
+      || Math.abs((w + e) / 2 - cell.lon) > 1e-6 || Math.abs((s + n) / 2 - cell.lat) > 1e-6) {
+      context.addIssue({ code: 'custom', path: ['air', 'cells'], message: 'Air bounds must describe the native cell centered on its coordinates' });
+    }
+  }
+  for (const r of data.air.regions) {
+    if (!ids.has(r.id) || r.members.length !== r.weights.length
+      || new Set(r.members).size !== r.members.length || r.members.some((m) => m >= data.air.cells.length)) {
+      context.addIssue({ code: 'custom', path: ['air', 'regions'], message: 'Air region members and weights must match existing unique cells' });
+    }
+  }
   for (const r of data.regions) {
-    if (r.members.length !== r.weights.length || r.members.some((m) => m >= cells.count)) {
+    if (r.members.length !== r.weights.length || new Set(r.members).size !== r.members.length || r.members.some((m) => m >= cells.count)) {
       context.addIssue({ code: 'custom', path: ['regions', r.id], message: 'Region members must index cells' });
     }
   }
@@ -209,6 +265,9 @@ export type Region = Artifact['regions'][number];
 export type Direction = Series['direction'];
 
 export type CellIndex = number & { readonly __brand: 'CellIndex' };
+export type AirIndex = number & { readonly __brand: 'AirIndex' };
+export type SiteIndex = number & { readonly __brand: 'SiteIndex' };
+export type AirSeries = z.infer<typeof airSeries>;
 
 export function parseArtifact(input: unknown): Artifact {
   return rainfallSchema.parse(input);

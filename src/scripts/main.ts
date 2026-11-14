@@ -1,10 +1,12 @@
 import type { StyleSpecification } from '@maplibre/maplibre-gl-style-spec';
 import { fallbackStyle, STYLE_TIMEOUT_MS, STYLE_URL, transformPositron } from '../lib/basemap';
-import { cellAt, DATA_URL, decodeCells, parseArtifact, regionId, type Artifact, type CellGrid, type CellIndex } from '../lib/rainfall';
-import { fmt, TEST_WORDS } from '../lib/story';
+import { cellAt, DATA_URL, decodeCells, parseArtifact, regionId, type Artifact, type AirIndex, type CellGrid, type CellIndex, type SiteIndex } from '../lib/rainfall';
+import { fmt } from '../lib/story';
+import { ensoText, trendText } from '../lib/place';
+import { focusAt, isFarm, isVariable, VARIABLES, windowLabel } from '../lib/variable';
 import {
   CHAPTER_IDS, COUNTRY, MODES, initialState, reduce,
-  type Action, type ChapterId, type Context, type Focus, type Mode, type ViewState,
+  type Action, type ChapterId, type Context, type Focus, type Mode, type Selection, type ViewState,
 } from '../lib/view';
 import { createMap, type RainMap } from './map';
 import { createPanel, type Panel } from './panel';
@@ -54,28 +56,30 @@ async function loadArtifact(): Promise<Artifact> {
   return parseArtifact(await response.json());
 }
 
-function parseHash(hash: string, a: Artifact, grid: CellGrid): { mode: Mode | null; year: number | null; focus: Focus } | null {
+function parseHash(hash: string, a: Artifact, grid: CellGrid): Selection | null {
   if (!hash.startsWith('#explore')) return null;
   const params = new URLSearchParams(hash.slice('#explore'.length).replace(/^&/, ''));
-  const mode = params.get('mode') ?? undefined;
-  const year = Number(params.get('year'));
+  const mode = params.get('mode') ?? '';
+  const variable = params.get('variable') ?? 'rain';
   const cell = grid.fromId(params.get('cell') ?? '');
   const region = regionId.safeParse(params.get('region'));
-  const focus: Focus = cell !== null
-    ? { kind: 'cell', cell }
+  const airCell = a.air.cells.findIndex((c) => c.id === params.get('air'));
+  const site = params.has('site') ? Number(params.get('site')) : -1;
+  const focus: Focus = airCell >= 0 ? { kind: 'air-cell', cell: airCell as AirIndex }
+    : Number.isInteger(site) && site >= 0 && site < a.farm.sites.length ? { kind: 'site', site: site as SiteIndex }
+    : cell !== null ? { kind: 'cell', cell }
     : region.success && a.regions.some((r) => r.id === region.data) ? { kind: 'region', region: region.data } : COUNTRY;
-  return {
-    mode: isMode(mode) ? mode : null,
-    year: Number.isInteger(year) && year >= a.period.start && year <= a.period.end ? year : null,
-    focus,
-  };
+  return { variable: isVariable(variable) ? variable : 'rain', window: params.get('window') === 'jan_apr' ? 'jan_apr' : 'annual',
+    mode: isMode(mode) ? mode : 'mean', year: params.has('year') ? Number(params.get('year')) : a.period.start, focus };
 }
 
-function hashFor(state: ViewState, grid: CellGrid): string {
-  const parts = ['#explore', `mode=${state.mode}`];
+function hashFor(state: ViewState, grid: CellGrid, a: Artifact): string {
+  const parts = ['#explore', `variable=${state.variable}`, `window=${state.window}`, `mode=${state.mode}`];
   if (state.mode === 'year') parts.push(`year=${state.year}`);
   if (state.focus.kind === 'region') parts.push(`region=${state.focus.region}`);
   if (state.focus.kind === 'cell') parts.push(`cell=${grid.id(state.focus.cell)}`);
+  if (state.focus.kind === 'air-cell') parts.push(`air=${encodeURIComponent(a.air.cells[state.focus.cell]!.id)}`);
+  if (state.focus.kind === 'site') parts.push(`site=${state.focus.site}`);
   return parts.join('&');
 }
 
@@ -157,14 +161,17 @@ function run(app: HTMLElement, a: Artifact, stylePromise: Promise<{ style: Style
     map?.render(state);
     map?.setCooperative(coarse.matches && state.phase === 'story');
     if (state.playing !== previous.playing) syncPlayback();
-    if (state.phase === 'explore') history.replaceState(null, '', hashFor(state, grid));
+    if (state.phase === 'explore') history.replaceState(null, '', hashFor(state, grid, a));
     else if (previous.phase === 'explore' && location.hash.startsWith('#explore')) history.replaceState(null, '', location.pathname);
     if (previous.playing && !state.playing) panel.announce(yearAnnouncement());
   }
 
   function yearAnnouncement(): string {
     const index = state.year - a.period.start;
-    return `${state.year}, national ${fmt.mm(a.national.annual_mm[index] ?? 0)}, ${fmt.signedPct(a.national.anomaly_pct[index] ?? 0)} against average`;
+    const place = panel.place(state);
+    const values = state.window === 'annual' ? place.annual : place.janApr;
+    const value = values[index]!;
+    return `${state.year}, ${place.heading}, ${windowLabel(state.window)} ${VARIABLES[state.variable].label}, ${state.variable === 'rain' ? fmt.mm(value) : `${value.toFixed(2)} °C`}.`;
   }
 
   function syncPlayback() {
@@ -173,11 +180,19 @@ function run(app: HTMLElement, a: Artifact, stylePromise: Promise<{ style: Style
   }
 
   function select(focus: Focus, cameraReason: 'select' | 'reveal' | null) {
+    if (state.variable === 'rain' && state.window === 'jan_apr' && state.mode === 'trend' && focus.kind === 'cell') {
+      const region = a.regions[a.cells.region[focus.cell] ?? -1];
+      if (!region) {
+        panel.explorerAlert('January to April trends are available for regions, but this square has no assigned region.');
+        return;
+      }
+      panel.explorerAlert(`January to April cell trends are unavailable. Showing the regional trend for ${region.name}.`);
+    } else panel.explorerAlert(null);
     dispatch({ type: 'select', focus, cameraReason });
     window.clearTimeout(announceTimer);
     announceTimer = window.setTimeout(() => {
       const place = panel.place(state);
-      panel.announce(`${place.heading}. ${fmt.signedPct(place.pctDecade)} per decade, ${place.meets ? TEST_WORDS.meets : TEST_WORDS.chance}.`);
+      panel.announce(`${place.heading}. ${state.mode === 'enso' ? ensoText(place) : trendText(a, place)}`);
     }, ANNOUNCE_MS);
   }
 
@@ -195,7 +210,7 @@ function run(app: HTMLElement, a: Artifact, stylePromise: Promise<{ style: Style
         container, style, artifact: a, grid, initialCameraRequest,
         events: {
           onManual: () => dispatch({ type: 'manual-camera' }),
-          onCellClick: (cell) => select({ kind: 'cell', cell }, null),
+          onSelect: (focus) => select(focus, null),
           onTileError: () => {
             if (app.dataset.basemap === 'fallback') return;
             app.dataset.basemap = 'fallback';
@@ -278,6 +293,11 @@ function run(app: HTMLElement, a: Artifact, stylePromise: Promise<{ style: Style
   app.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
+    const demoStart = target.closest<HTMLElement>('[data-demo-start]')?.dataset.demoStart;
+    if (demoStart === 'rain-air' || demoStart === 'farm') { dispatch({ type: 'start-demo', id: demoStart }); return; }
+    if (target.closest('[data-demo-prev]')) { dispatch({ type: 'demo-step', delta: -1 }); return; }
+    if (target.closest('[data-demo-next]')) { dispatch({ type: 'demo-step', delta: 1 }); return; }
+    if (target.closest('[data-demo-exit]')) { dispatch({ type: 'exit-demo' }); return; }
     const goto = target.closest<HTMLElement>('[data-goto]');
     const chapter = goto?.dataset.goto;
     if (goto && isChapter(chapter)) {
@@ -339,6 +359,20 @@ function run(app: HTMLElement, a: Artifact, stylePromise: Promise<{ style: Style
   app.addEventListener('input', (event) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
+    if (target.matches('[data-variable-select]') && isVariable(target.value)) {
+      dispatch({ type: 'set-variable', variable: target.value });
+      panel.announce(`${VARIABLES[state.variable].label}. ${VARIABLES[state.variable].coverage}`);
+      return;
+    }
+    if (target.matches('[data-window-select]')) {
+      dispatch({ type: 'set-window', window: target.value === 'jan_apr' ? 'jan_apr' : 'annual' });
+      return;
+    }
+    if (target.matches('[data-site-select]')) {
+      const site = Number(target.value);
+      select(target.value !== '' && Number.isInteger(site) && a.farm.sites[site] ? { kind: 'site', site: site as SiteIndex } : COUNTRY, 'select');
+      return;
+    }
     if (target instanceof HTMLInputElement && target.matches('[data-year-input]')) {
       dispatch({ type: 'set-year', year: Number(target.value) });
       if (!state.playing) panel.announce(yearAnnouncement());
@@ -359,6 +393,19 @@ function run(app: HTMLElement, a: Artifact, stylePromise: Promise<{ style: Style
     const direction = ARROWS[event.key];
     if (direction === undefined) return;
     event.preventDefault();
+    if (state.variable !== 'rain') {
+      const points = state.variable === 'air' ? a.air.cells : a.farm.sites;
+      const selected = state.focus.kind === 'air-cell' ? state.focus.cell : state.focus.kind === 'site' ? state.focus.site : null;
+      const origin = selected === null ? map?.center() ?? [121, 13] : [points[selected]!.lon, points[selected]!.lat];
+      const [dy, dx] = OFFSETS[direction];
+      const candidates = points.map((point, i) => ({ i, x: point.lon - origin[0]!, y: point.lat - origin[1]! }))
+        .filter((p) => selected === null || p.x * dx + p.y * dy > 0)
+        .sort((p, q) => (p.x * p.x + p.y * p.y) - (q.x * q.x + q.y * q.y));
+      const next = candidates[0]?.i;
+      if (next === undefined) panel.announce(`No observation further ${DIRECTION_WORDS[direction]}.`);
+      else select(state.variable === 'air' ? { kind: 'air-cell', cell: next as AirIndex } : { kind: 'site', site: next as SiteIndex }, 'reveal');
+      return;
+    }
     if (state.focus.kind !== 'cell') {
       const [lon, lat] = map?.center() ?? grid.center(pantabangan);
       const first = cellAt(grid, lon, lat) ?? nearestCell(grid, lon, lat);
@@ -377,6 +424,12 @@ function run(app: HTMLElement, a: Artifact, stylePromise: Promise<{ style: Style
       return;
     }
     navigator.geolocation.getCurrentPosition((position) => {
+      if (state.variable !== 'rain') {
+        const focus = focusAt(a, state.variable, position.coords.longitude, position.coords.latitude);
+        if (focus === null) panel.explorerAlert(`No ${isFarm(state.variable) ? 'sampled cropland site' : 'MERRA-2 land cell'} covers your location. Choose a mapped observation instead.`);
+        else select(focus, 'select');
+        return;
+      }
       const cell = cellAt(grid, position.coords.longitude, position.coords.latitude);
       if (cell === null) {
         panel.explorerAlert('That location is outside the mapped squares.');
@@ -401,16 +454,25 @@ function run(app: HTMLElement, a: Artifact, stylePromise: Promise<{ style: Style
 
   const deepLink = parseHash(location.hash, a, grid);
   if (deepLink !== null) {
-    dispatch({ type: 'enter-explore' });
-    if (deepLink.mode !== null) dispatch({ type: 'set-mode', mode: deepLink.mode });
-    if (deepLink.year !== null) dispatch({ type: 'set-year', year: deepLink.year });
-    select(deepLink.focus, 'select');
+    dispatch({ type: 'restore', selection: deepLink });
     explore?.scrollIntoView({ block: 'start' });
   } else {
     const initialChapter = location.hash.startsWith('#ch-') ? location.hash.slice(4) : undefined;
     if (isChapter(initialChapter)) goToChapter(initialChapter);
     else onLayout();
   }
+  window.addEventListener('hashchange', () => {
+    if (location.hash === '#explore') {
+      dispatch({ type: 'enter-explore' });
+      history.replaceState(null, '', hashFor(state, grid, a));
+      return;
+    }
+    const link = parseHash(location.hash, a, grid);
+    if (link) {
+      dispatch({ type: 'restore', selection: link });
+      explore?.scrollIntoView({ block: 'start' });
+    }
+  });
 }
 
 if (root !== null) start(root);

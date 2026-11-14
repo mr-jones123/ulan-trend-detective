@@ -2,10 +2,15 @@ import type { ChartInput } from './chart';
 import { fmt, regionById } from './story';
 import type { Artifact, CellGrid, Direction, Series } from './rainfall';
 import type { Focus, Mode } from './view';
+import { signedC, temperatureSeries, type Variable, type Window } from './variable';
 
 export type Place = {
   readonly key: string;
   readonly heading: string;
+  readonly variable: Variable;
+  readonly window: Window;
+  readonly trendAvailable: boolean;
+  readonly refit: Artifact['farm']['day']['refit'] | null;
   readonly annual: readonly number[];
   readonly mean: number;
   readonly janApr: readonly number[];
@@ -24,22 +29,40 @@ export type Place = {
 
 const SIGN_DIRECTION: Record<-1 | 0 | 1, Direction> = { [-1]: 'down', 0: 'zero', 1: 'up' };
 
-function fromSeries(key: string, heading: string, kind: Focus['kind'], s: Series): Place {
+function fromSeries(key: string, heading: string, kind: Focus['kind'], s: Series, window: Window): Place {
+  const trend = window === 'jan_apr' ? s.jan_apr : s;
   return {
-    key, heading, kind, annual: s.annual_mm, mean: s.mean_mm, senPerDecade: s.sen_mm_decade, pctDecade: s.sen_pct_decade,
+    key, heading, kind, variable: 'rain', window, trendAvailable: true, refit: null,
+    annual: s.annual_mm, mean: s.mean_mm, senPerDecade: trend.sen_mm_decade, pctDecade: trend.sen_pct_decade,
     janApr: s.jan_apr.mm, janAprMean: s.jan_apr.mean_mm,
-    mid: s.sen_mid_mm, p: s.p, meets: s.meets_threshold,
+    mid: trend.sen_mid_mm, p: trend.p, meets: trend.meets_threshold,
     ensoDiffPct: s.jan_apr.enso.diff_pct, ensoDirection: s.jan_apr.enso.direction, landPct: null, croplandPct: null,
   };
 }
 
-export function placeOf(a: Artifact, grid: CellGrid, focus: Focus): Place {
+export function placeOf(a: Artifact, grid: CellGrid, focus: Focus, variable: Variable = 'rain', window: Window = 'annual'): Place {
+  if (variable !== 'rain') {
+    const s = temperatureSeries(a, { variable, window, focus });
+    const enso = temperatureSeries(a, { variable, window: 'jan_apr', focus });
+    const heading = focus.kind === 'site' ? `Sampled cropland site ${focus.site + 1}, ${fmt.lat(a.farm.sites[focus.site]!.lat)}, ${fmt.lon(a.farm.sites[focus.site]!.lon)}`
+      : focus.kind === 'air-cell' ? `MERRA-2 cell at ${fmt.lat(a.air.cells[focus.cell]!.lat)}, ${fmt.lon(a.air.cells[focus.cell]!.lon)}`
+      : focus.kind === 'region' ? regionById(a, focus.region).name
+      : variable === 'air' ? 'Philippines' : 'Mean of 12 sampled cropland sites';
+    return {
+      key: `${variable}:${focus.kind}:${focus.kind === 'site' ? focus.site : focus.kind === 'air-cell' ? focus.cell : focus.kind === 'region' ? focus.region : ''}`,
+      heading, kind: focus.kind, variable, window, trendAvailable: true,
+      annual: s.c, janApr: s.c, mean: s.mean_c, janAprMean: s.mean_c,
+      senPerDecade: s.sen_c_decade, pctDecade: 0, mid: s.sen_mid_c, p: s.p, meets: s.meets_threshold,
+      ensoDiffPct: enso.enso_diff_c, ensoDirection: enso.enso_direction, landPct: null, croplandPct: null,
+      refit: 'refit' in s ? s.refit as Artifact['farm']['day']['refit'] : null,
+    };
+  }
   switch (focus.kind) {
     case 'country':
-      return fromSeries('country', 'Philippines', 'country', a.national);
+      return fromSeries('country', 'Philippines', 'country', a.national, window);
     case 'region': {
       const region = regionById(a, focus.region);
-      return fromSeries(`region:${region.id}`, region.name, 'region', region);
+      return fromSeries(`region:${region.id}`, region.name, 'region', region, window);
     }
     case 'cell': {
       const c = a.cells;
@@ -49,6 +72,7 @@ export function placeOf(a: Artifact, grid: CellGrid, focus: Focus): Place {
       const regionName = a.regions[regionIndex]?.name;
       return {
         key: `cell:${grid.id(i)}`, kind: 'cell',
+        variable, window, trendAvailable: window === 'annual', refit: null,
         heading: `Square at ${fmt.lat(lat)}, ${fmt.lon(lon)}${regionName === undefined ? '' : `, ${regionName}`}`,
         annual: grid.annual(i), mean: c.mean_mm[i] ?? 0, senPerDecade: c.sen_mm_decade[i] ?? 0, pctDecade: c.sen_pct_decade[i] ?? 0,
         mid: c.sen_mid_mm[i] ?? 0, p: c.p[i] ?? 1, meets: c.meets[i] === 1,
@@ -58,6 +82,9 @@ export function placeOf(a: Artifact, grid: CellGrid, focus: Focus): Place {
         croplandPct: c.cropland_pct[i] ?? null,
       };
     }
+    case 'air-cell':
+    case 'site':
+      throw new Error('Temperature focus cannot select rainfall');
     default: {
       const unreachable: never = focus;
       return unreachable;
@@ -65,19 +92,31 @@ export function placeOf(a: Artifact, grid: CellGrid, focus: Focus): Place {
   }
 }
 
+export function trendText(a: Artifact, place: Place): string {
+  if (!place.trendAvailable) return 'January to April cell trends are unavailable. Select a region or the whole country.';
+  const amount = place.variable === 'rain'
+    ? `${fmt.signedPct(place.pctDecade)} (${place.senPerDecade.toFixed(2)} mm) per decade`
+    : `${signedC(place.senPerDecade)} per decade`;
+  return `${amount}, ${fmt.pSameSideOfAlpha(place.p, place.meets, a.alpha)}, ${place.meets ? 'meets' : 'does not meet'} the unadjusted p < 0.05 test.`;
+}
+
+export function ensoText(place: Place): string {
+  return `${place.variable === 'rain' ? fmt.signedPct(place.ensoDiffPct) : signedC(place.ensoDiffPct)} in El Niño-start years against other years, January to April. Association, not attribution.`;
+}
+
 export function placeChart(a: Artifact, place: Place, selectedYear: number | null, mode: Mode): ChartInput {
-  const seasonal = mode === 'enso' || mode === 'farm';
+  const seasonal = place.window === 'jan_apr' || mode === 'enso' || mode === 'farm';
+  const rain = place.variable === 'rain';
+  const trend = place.trendAvailable && mode !== 'enso' && mode !== 'farm';
   return {
-    unit: 'mm', baseline: 'zero',
-    summary: seasonal
-      ? `January to April rainfall in El Niño-start years was ${fmt.signedPct(place.ensoDiffPct)} against other years. History, not a forecast.`
-      : `Fitted change ${fmt.signedPct(place.pctDecade)} per decade (${fmt.pSameSideOfAlpha(place.p, place.meets, a.alpha)}), ${place.meets ? 'meets the unadjusted p < 0.05 test' : 'could be chance'}.`,
+    ...(rain ? { unit: 'mm', baseline: 'zero' } as const : { unit: '°C', baseline: 'mean' } as const),
+    summary: mode === 'enso' || mode === 'farm' ? ensoText(place) : trendText(a, place),
     key: `${place.key}:${seasonal ? 'jan_apr' : 'annual'}`, name: place.heading, years: a.period.years,
     totals: seasonal ? place.janApr : place.annual, period: seasonal ? 'January to April' : 'annual',
     enso: a.enso.began_el_nino, mean: seasonal ? place.janAprMean : place.mean,
-    trend: seasonal ? null : { senPerDecade: place.senPerDecade, mid: place.mid,
-      label: place.meets ? `${fmt.signedPct(place.pctDecade)} per decade` : `could be chance, ${fmt.pSameSideOfAlpha(place.p, place.meets, a.alpha)}`,
-      p: place.p, meets: place.meets, alpha: a.alpha },
+    trend: trend ? { senPerDecade: place.senPerDecade, mid: place.mid,
+      label: rain ? `${fmt.signedPct(place.pctDecade)} per decade` : `${signedC(place.senPerDecade)} per decade`,
+      p: place.p, meets: place.meets, alpha: a.alpha } : null,
     selectedYear,
   };
 }

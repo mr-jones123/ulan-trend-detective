@@ -218,8 +218,17 @@ figcaption { font-size: var(--small); color: var(--muted); margin-top: 10px; lin
 .explorer-heading { font-size: var(--head); margin-bottom: 0.4em; }
 .explorer-alert { font-weight: 600; background: var(--bg); padding: 12px; }
 .explore-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; margin: 24px 0; }
-.field { display: grid; gap: 4px; font-size: var(--small); font-weight: 600; }
-.field select { min-height: 48px; padding: 0 12px; border: 0; border-radius: 0; background: var(--bg); font-size: var(--body); font-weight: 400; }
+.field { display: grid; gap: 4px; font-size: var(--small); font-weight: 600; max-width: 100%; min-width: 0; }
+.field select { min-height: 48px; width: 100%; max-width: 100%; padding: 0 12px; border: 0; border-radius: 0; background: var(--bg); font-size: var(--body); font-weight: 400; }
+.guided-demo, .air-finding { border: 1px solid var(--ink); padding: 16px; margin: 24px 0; }
+.guided-demo { background: var(--bg); }
+.guided-demo .explore-actions { margin-bottom: 12px; }
+.guided-demo .button { min-height: 48px; }
+.glossary, [data-season-method] { grid-column: 4 / -1; margin-bottom: 24px; }
+.glossary summary { cursor: pointer; font-weight: 600; min-height: 44px; }
+.glossary dt { font-weight: 600; margin-top: 16px; }
+.glossary dd { margin: 4px 0 16px; }
+[data-season-comparison] { margin-top: 32px; }
 .modes { border: 0; padding: 0; margin: 0 0 16px; display: grid; grid-template-columns: repeat(4, auto); justify-content: start; gap: 0; }
 .modes legend { font-weight: 600; font-size: var(--small); margin-bottom: 6px; padding: 0; }
 .mode { position: relative; }

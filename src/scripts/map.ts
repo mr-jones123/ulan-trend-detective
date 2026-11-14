@@ -10,10 +10,11 @@ import {
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { firstSymbolLayer } from '../lib/basemap';
-import { colourExpression } from '../lib/colour';
-import { anomalyPct, type Artifact, type CellGrid, type CellIndex, type RegionId } from '../lib/rainfall';
+import { colourExpression, temperatureColour } from '../lib/colour';
+import { anomalyPct, type Artifact, type AirIndex, type CellGrid, type SiteIndex, type RegionId } from '../lib/rainfall';
 import { regionById } from '../lib/story';
-import type { CameraReason, Focus, UnmetTrendStyle, ViewState } from '../lib/view';
+import { focusKey, type CameraReason, type Focus, type UnmetTrendStyle, type ViewState } from '../lib/view';
+import { temperatureSeries, VARIABLES } from '../lib/variable';
 
 setWorkerUrl(workerUrl);
 
@@ -29,7 +30,7 @@ const strongInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) *
 
 export type MapEvents = {
   onManual(): void;
-  onCellClick(cell: CellIndex): void;
+  onSelect(focus: Focus): void;
   onTileError(): void;
   onCamera(camera: string): void;
 };
@@ -42,11 +43,10 @@ export type RainMap = {
 };
 
 type Applied = {
-  mode: ViewState['mode'] | null;
-  unmetTrendStyle: UnmetTrendStyle | null;
-  year: number | null;
+  layerKey: string;
+  variable: ViewState['variable'] | null;
   emphasis: RegionId | null | undefined;
-  selected: CellIndex | null | undefined;
+  selected: string;
   cameraRequest: number;
 };
 
@@ -78,11 +78,12 @@ export function createMap(options: {
   map.touchPitch.disable();
   map.keyboard.disableRotation();
   map.addControl(new NavigationControl({ showCompass: false }), 'top-right');
-  map.addControl(new AttributionControl({ compact: false, customAttribution: 'Rainfall: NASA GPM IMERG via NASA POWER' }), 'bottom-right');
+  let attribution = new AttributionControl({ compact: false, customAttribution: VARIABLES.rain.source });
+  map.addControl(attribution, 'bottom-right');
 
   let ready = false;
   let pending: ViewState | null = null;
-  const applied: Applied = { mode: null, unmetTrendStyle: null, year: null, emphasis: undefined, selected: undefined, cameraRequest: options.initialCameraRequest };
+  const applied: Applied = { layerKey: '', variable: 'rain', emphasis: undefined, selected: '', cameraRequest: options.initialCameraRequest };
 
   const features = grid.all.map((cell) => ({
     type: 'Feature' as const,
@@ -101,6 +102,11 @@ export function createMap(options: {
     const before = firstSymbolLayer(options.style);
     map.addSource('cells', { type: 'geojson', data: { type: 'FeatureCollection', features } });
     map.addSource('selected', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addSource('temperature', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: 'temperature', type: 'fill', source: 'temperature', layout: { visibility: 'none' },
+      paint: { 'fill-color': temperatureColour('mean'), 'fill-opacity': BASE_OPACITY } }, before);
+    map.addLayer({ id: 'temperature-edges', type: 'line', source: 'temperature', layout: { visibility: 'none' },
+      paint: { 'line-color': PAPER, 'line-width': 1 } }, before);
     map.addSource('farm-sites', { type: 'geojson', data: {
       type: 'FeatureCollection', features: a.farm.sites.map((site) => ({
         type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [site.outline] },
@@ -130,10 +136,23 @@ export function createMap(options: {
   map.on('click', 'rain', (event) => {
     const id = event.features?.[0]?.id;
     const cell = typeof id === 'number' ? grid.at(id) : null;
-    if (cell !== null) events.onCellClick(cell);
+    if (cell !== null) {
+      const regionIndex = a.cells.region[cell];
+      const region = regionIndex === undefined ? undefined : a.regions[regionIndex];
+      events.onSelect(current?.variable === 'rain' && current.window === 'jan_apr' && current.mode === 'trend'
+        ? region ? { kind: 'region', region: region.id } : { kind: 'country' }
+        : { kind: 'cell', cell });
+    }
   });
   map.on('mouseenter', 'rain', () => { map.getCanvas().style.cursor = 'pointer'; });
   map.on('mouseleave', 'rain', () => { map.getCanvas().style.cursor = ''; });
+  map.on('click', 'temperature', (event) => {
+    const id = event.features?.[0]?.id;
+    if (typeof id !== 'number' || !current) return;
+    events.onSelect(current.variable === 'air' ? { kind: 'air-cell', cell: id as AirIndex } : { kind: 'site', site: id as SiteIndex });
+  });
+  map.on('mouseenter', 'temperature', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'temperature', () => { map.getCanvas().style.cursor = ''; });
   map.on('error', (event) => {
     if ('sourceId' in event && event.sourceId === 'openmaptiles') events.onTileError();
     else console.error('Map error', event.error);
@@ -145,15 +164,55 @@ export function createMap(options: {
       : state.mode === 'farm'
         ? ['case', ['>=', ['get', 'cropland'], a.farm.map_threshold_pct], BASE_OPACITY, 0.06]
         : BASE_OPACITY;
-    return ['*', base, ['case', ['boolean', ['feature-state', 'dim'], false], 0.25, 1]];
+    return ['*', base, ['coalesce', ['get', 'coverage'], 1], ['case', ['boolean', ['feature-state', 'dim'], false], 0.25, 1]];
   }
 
-  function applyYear(year: number) {
-    const index = year - a.period.start;
+  function applyRain(state: ViewState) {
+    const seasonal = state.window === 'jan_apr';
+    const index = state.year - a.period.start;
+    const next = features.map((feature, i) => {
+      const region = a.regions[a.cells.region[i] ?? -1];
+      const mean = seasonal ? a.cells.jan_apr_mean_mm[i]! : a.cells.mean_mm[i]!;
+      return { ...feature, properties: { ...feature.properties, mean,
+        trend: seasonal ? region?.jan_apr.sen_pct_decade ?? 0 : feature.properties.trend,
+        meets: seasonal ? Number(region?.jan_apr.meets_threshold ?? false) : feature.properties.meets,
+        coverage: seasonal && state.mode === 'trend' && region === undefined ? 0 : 1,
+      } };
+    });
+    map.getSource<GeoJSONSource>('cells')?.setData({ type: 'FeatureCollection', features: next });
     for (let i = 0; i < grid.count; i += 1) {
-      const annual = a.cells.annual_mm[i * a.period.years.length + index] ?? 0;
-      map.setFeatureState({ source: 'cells', id: i }, { a: anomalyPct(annual, a.cells.mean_mm[i] ?? 1) });
+      const values = seasonal ? a.cells.jan_apr_mm : a.cells.annual_mm;
+      const mean = seasonal ? a.cells.jan_apr_mean_mm[i]! : a.cells.mean_mm[i]!;
+      map.setFeatureState({ source: 'cells', id: i }, { a: anomalyPct(values[i * a.period.years.length + index]!, mean) });
     }
+  }
+
+  function ring(focus: Focus): number[][] | null {
+    if (focus.kind === 'cell') return grid.ring(focus.cell);
+    if (focus.kind === 'site') return a.farm.sites[focus.site]!.outline;
+    if (focus.kind === 'air-cell') {
+      const [w, s, e, n] = a.air.cells[focus.cell]!.bounds;
+      return [[w, s], [e, s], [e, n], [w, n], [w, s]];
+    }
+    return null;
+  }
+
+  function applyTemperature(state: ViewState) {
+    const count = state.variable === 'air' ? a.air.cells.length : a.farm.sites.length;
+    const temperatureFeatures = Array.from({ length: count }, (_, i) => {
+      const focus: Focus = state.variable === 'air' ? { kind: 'air-cell', cell: i as AirIndex } : { kind: 'site', site: i as SiteIndex };
+      const s = temperatureSeries(a, { ...state, focus });
+      const region = state.hover ?? (state.focus.kind === 'region' ? state.focus.region : null);
+      const members = state.variable === 'air' && region ? a.air.regions.find((r) => r.id === region)?.members : null;
+      const value = state.mode === 'mean' ? s.mean_c : state.mode === 'trend' ? s.sen_c_decade
+        : state.mode === 'enso' ? s.enso_diff_c : s.c[state.year - a.period.start]! - s.mean_c;
+      return { type: 'Feature' as const, id: i, properties: { value, meets: Number(s.meets_threshold), dim: Number(members != null && !members.includes(i)) },
+        geometry: { type: 'Polygon' as const, coordinates: [ring(focus)!] } };
+    });
+    map.getSource<GeoJSONSource>('temperature')?.setData({ type: 'FeatureCollection', features: temperatureFeatures });
+    map.setPaintProperty('temperature', 'fill-color', temperatureColour(state.mode));
+    map.setPaintProperty('temperature', 'fill-opacity', ['*', state.mode === 'trend'
+      ? ['case', ['==', ['get', 'meets'], 1], BASE_OPACITY, 0.28] : BASE_OPACITY, ['case', ['==', ['get', 'dim'], 1], 0.25, 1]]);
   }
 
   function applyEmphasis(region: RegionId | null) {
@@ -173,6 +232,14 @@ export function createMap(options: {
       case 'region':
         map.fitBounds(regionById(a, focus.region).bounds, { ...common, padding: 48, maxZoom: 8.5 });
         return;
+      case 'air-cell':
+        map.fitBounds(a.air.cells[focus.cell]!.bounds, { ...common, padding: 48, maxZoom: 8.5 });
+        return;
+      case 'site': {
+        const site = a.farm.sites[focus.site]!;
+        map.easeTo({ ...common, center: [site.lon, site.lat], zoom: 9 });
+        return;
+      }
       case 'cell': {
         const center = grid.center(focus.cell);
         if (reason === 'reveal') {
@@ -192,34 +259,47 @@ export function createMap(options: {
     }
   }
 
+  let current: ViewState | null = null;
   function render(state: ViewState) {
+    current = state;
     if (!ready) {
       pending = state;
       return;
     }
-    if (state.mode !== applied.mode) {
-      map.setPaintProperty('rain', 'fill-color', colourExpression(a, state.mode));
-      map.setLayoutProperty('farm-sites', 'visibility', state.mode === 'farm' ? 'visible' : 'none');
+    const temperatureRegion = state.variable === 'rain' ? '' : state.hover ?? (state.focus.kind === 'region' ? state.focus.region : '');
+    const layerKey = `${state.variable}:${state.window}:${state.mode}:${state.mode === 'year' ? state.year : ''}:${state.unmetTrendStyle}:${temperatureRegion}`;
+    if (layerKey !== applied.layerKey) {
+      const rain = state.variable === 'rain';
+      map.setLayoutProperty('rain', 'visibility', rain ? 'visible' : 'none');
+      map.setLayoutProperty('rain-edges', 'visibility', rain ? 'visible' : 'none');
+      map.setLayoutProperty('temperature', 'visibility', rain ? 'none' : 'visible');
+      map.setLayoutProperty('temperature-edges', 'visibility', rain ? 'none' : 'visible');
+      map.setLayoutProperty('farm-sites', 'visibility', rain && state.mode === 'farm' ? 'visible' : 'none');
+      if (rain) {
+        applyRain(state);
+        map.setPaintProperty('rain', 'fill-color', colourExpression(a, state.mode, state.window));
+        map.setPaintProperty('rain', 'fill-opacity', opacity(state));
+      } else applyTemperature(state);
+      if (state.variable !== applied.variable) {
+        map.removeControl(attribution);
+        attribution = new AttributionControl({ compact: false, customAttribution: VARIABLES[state.variable].source });
+        map.addControl(attribution, 'bottom-right');
+        applied.variable = state.variable;
+      }
+      applied.layerKey = layerKey;
     }
-    if (state.mode !== applied.mode || state.unmetTrendStyle !== applied.unmetTrendStyle) map.setPaintProperty('rain', 'fill-opacity', opacity(state));
-    if (state.mode === 'year' && state.year !== applied.year) {
-      applyYear(state.year);
-      applied.year = state.year;
-    }
-    applied.mode = state.mode;
-    applied.unmetTrendStyle = state.unmetTrendStyle;
-
     const emphasis = state.hover ?? (state.focus.kind === 'region' ? state.focus.region : null);
     if (emphasis !== applied.emphasis) {
       applyEmphasis(emphasis);
       applied.emphasis = emphasis;
     }
-    const selected = state.focus.kind === 'cell' ? state.focus.cell : null;
+    const selected = `${state.variable}:${focusKey(state.focus, grid.id)}`;
     if (selected !== applied.selected) {
       const source = map.getSource<GeoJSONSource>('selected');
+      const outline = ring(state.focus);
       source?.setData({
         type: 'FeatureCollection',
-        features: selected === null ? [] : [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [grid.ring(selected)] } }],
+        features: outline === null ? [] : [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [outline] } }],
       });
       applied.selected = selected;
     }
