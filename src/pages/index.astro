@@ -9,6 +9,7 @@ import '../styles/global.css';
 import Story from '../components/Story.astro';
 import { DATA_URL, parseArtifact } from '../lib/rainfall';
 import { buildClaims, fmt } from '../lib/story';
+import { legendModel } from '../lib/colour';
 
 const artifact = parseArtifact(JSON.parse(await readFile(join(process.cwd(), 'public', DATA_URL), 'utf8')));
 const claims = buildClaims(artifact);
@@ -16,6 +17,31 @@ const audit = artifact.provenance.source_audit;
 const cellCount = fmt.count(artifact.cells.count);
 const PAGASA = 'https://pubfiles.pagasa.dost.gov.ph/pagasaweb/files/climate/elninolanina/EN_Advisory_5.pdf';
 const description = `${claims['standfirst-enso'].text} ${claims['standfirst-trend'].text} NASA IMERG rainfall over the Philippines, 2001-2025.`;
+const ensoClasses = legendModel(artifact, 'enso', artifact.period.start).classes;
+const yearClasses = legendModel(artifact, 'year', artifact.period.start).classes;
+const ensoStops = artifact.legend.enso_pct.slice(1, -1);
+const yearStops = artifact.legend.year_pct.slice(1, -1);
+const minCol = Math.min(...artifact.cells.col);
+const maxCol = Math.max(...artifact.cells.col);
+const minRow = Math.min(...artifact.cells.row);
+const maxRow = Math.max(...artifact.cells.row);
+const cellWidth = maxCol - minCol + 1;
+const cellHeight = maxRow - minRow + 1;
+const cellPaths = ensoClasses.map(({ colour }) => ({ colour, d: '' }));
+for (let index = 0; index < artifact.cells.count; index += 1) {
+  const value = artifact.cells.jan_apr_enso_diff_pct[index]!;
+  const nextBreak = ensoStops.findIndex((stop) => value < stop);
+  const colourClass = nextBreak === -1 ? cellPaths.length - 1 : nextBreak;
+  const x = artifact.cells.col[index]! - minCol;
+  const y = maxRow - artifact.cells.row[index]!;
+  cellPaths[colourClass]!.d += `M${x} ${y}h1v1h-1z`;
+}
+const januarySquares = artifact.period.years.map((year, index) => {
+  const anomaly = artifact.national.jan_apr.anomaly_pct[index]!;
+  const nextBreak = yearStops.findIndex((stop) => anomaly < stop);
+  const colourClass = nextBreak === -1 ? yearClasses.length - 1 : nextBreak;
+  return { year, anomaly, colour: yearClasses[colourClass]!.colour, elNino: artifact.enso.began_el_nino[index] };
+});
 ---
 <!doctype html>
 <html lang="en">
@@ -67,12 +93,33 @@ const description = `${claims['standfirst-enso'].text} ${claims['standfirst-tren
             <button type="button" class="button button-primary" data-find disabled>Find your square</button>
             <a href={DATA_URL} download>Download the data</a>
           </p>
+          <figure class="hero-cells">
+            <svg viewBox={`0 0 ${cellWidth} ${cellHeight}`} width={cellWidth} height={cellHeight} role="img"
+              aria-label="Philippine IMERG cells coloured by January to April rainfall differences in El Niño-start years">
+              {cellPaths.map(({ colour, d }) => <path fill={colour} d={d} />)}
+            </svg>
+            <figcaption>Each square is one IMERG cell. Brown means less January to April rain in El Niño-start years.</figcaption>
+          </figure>
           <p class="mosaic-credit">Pictures, left to right: Typhoon Lando's rain from IMERG, NASA Earth Observatory map by Joshua Stevens and Jesse Allen. Pantabangan Lake in 2023 and 2024, NASA Earth Observatory images by Michala Garrison, using Landsat data from the U.S. Geological Survey. The Pampanga River in flood, NASA Earth Observatory image by Joshua Stevens, using data from LANCE/EOSDIS Rapid Response.</p>
         </div>
       </section>
 
       <section class="intro" aria-label="Why this page looks back">
         <p class="statement" data-reveal>PAGASA's El Niño <a href={PAGASA}>Advisory No. 5</a>, issued on 7 October 2026, says this El Niño may last into the first half of 2027 and raises the chance of dry spells and drought. This page does not forecast. It looks back at 25 years of satellite rain to show what changed, and what earlier El Niño years were like.</p>
+        <figure class="january-years" data-reveal>
+          <ol class="january-squares" aria-label="National January to April rainfall anomalies">
+            {januarySquares.map(({ year, anomaly, colour, elNino }) => (
+              <li style={`--square-colour:${colour}`} data-el-nino={elNino}
+                aria-label={`${year}, ${anomaly.toFixed(1)}% against the 25-year average${elNino ? ', began in El Niño' : ''}`}>
+                <span class="visually-hidden">{year}, {anomaly.toFixed(1)}%{elNino ? ', began in El Niño' : ''}</span>
+              </li>
+            ))}
+          </ol>
+          <div class="chart-ticks" aria-hidden="true">
+            {[2001, 2010, 2020, 2025].map((year) => <span style={`--tick-left:${(year - 2001 + 0.5) / 25 * 100}%`}>{year}</span>)}
+          </div>
+          <figcaption>Each square is one January to April, 2001 to 2025, against its 25-year average. Marked squares began in El Niño.</figcaption>
+        </figure>
         <figure class="intro-figure" data-reveal>
           <img src="/images/cagayan-flood-2020.jpg" width="720" height="480" loading="lazy"
             alt="Northern Luzon from space with the brown, swollen Cagayan River running north past Tuguegarao to Aparri." />
@@ -90,28 +137,34 @@ const description = `${claims['standfirst-enso'].text} ${claims['standfirst-tren
           <li data-reveal><p class="stair">We take the middle slope.</p><p>Sen's slope is the median of the 300 slopes between every pair of years, so one unusual year moves it less than it would move a straight-line fit.</p></li>
           <li data-reveal><p class="stair">Last, we ask if chance could do it.</p><p>The Mann-Kendall test gives p. Below 0.05, a change meets the test. The test assumes that years are independent.</p></li>
         </ol>
-        <div class="method-notes">
-          <p data-claim={claims['method-weights'].id} data-verdict={claims['method-weights'].verdict}>{claims['method-weights'].text}</p>
-          <p data-claim={claims['method-enso'].id} data-verdict={claims['method-enso'].verdict}>{claims['method-enso'].text}</p>
-          <p data-claim={claims['method-limits'].id} data-verdict={claims['method-limits'].verdict}>{claims['method-limits'].text}</p>
-          <p data-claim="method-farm" data-verdict={claims['method-farm'].verdict}>{claims['method-farm'].text}</p>
-          <p data-claim="farm-limit" data-verdict={claims['farm-limit'].verdict}>{claims['farm-limit'].text}</p>
-          <details class="why-imerg">
-            <summary>Why we use IMERG</summary>
-            <p>We first built this map from NASA POWER's MERRA-2 rainfall, and checked it against IMERG at one point near Manila.</p>
-            <p data-claim={claims.audit.id} data-verdict={claims.audit.verdict}>{claims.audit.text}</p>
-            <p>{artifact.enso.years.includes(audit.max_ratio_year) ? `${audit.max_ratio_year} began in El Niño, so that one year would have bent both the trend and the El Niño comparison.` : 'That one year would have bent the trend.'} We rebuilt everything on IMERG. MERRA-2 appears nowhere else on this page.</p>
-            <table class="audit-table">
-              <caption>Annual rain at {fmt.lon(audit.point[0])}, {fmt.lat(audit.point[1])}, from NASA POWER point requests</caption>
-              <thead><tr><th scope="col">Year</th><th scope="col">MERRA-2</th><th scope="col">IMERG</th><th scope="col">Ratio</th></tr></thead>
-              <tbody>
-                {audit.years.map((year, index) => (
-                  <tr data-audit-year={year}><th scope="row">{year}</th><td>{fmt.mm(audit.merra2_mm[index] ?? 0)}</td><td>{fmt.mm(audit.imerg_mm[index] ?? 0)}</td><td>{(audit.ratio[index] ?? 0).toFixed(2)}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </details>
-        </div>
+        <section class="method-notes" aria-labelledby="notes-heading">
+          <div class="notes-heading">
+            <h2 id="notes-heading">The fine print</h2>
+            <p>What these numbers can and cannot say.</p>
+          </div>
+          <div class="notes-columns">
+            <p data-claim={claims['method-weights'].id} data-verdict={claims['method-weights'].verdict}>{claims['method-weights'].text}</p>
+            <p data-claim={claims['method-enso'].id} data-verdict={claims['method-enso'].verdict}>{claims['method-enso'].text}</p>
+            <p data-claim={claims['method-limits'].id} data-verdict={claims['method-limits'].verdict}>{claims['method-limits'].text}</p>
+            <p data-claim="method-farm" data-verdict={claims['method-farm'].verdict}>{claims['method-farm'].text}</p>
+            <p data-claim="farm-limit" data-verdict={claims['farm-limit'].verdict}>{claims['farm-limit'].text}</p>
+            <details class="why-imerg">
+              <summary>Why we use IMERG</summary>
+              <p>We first built this map from NASA POWER's MERRA-2 rainfall, and checked it against IMERG at one point near Manila.</p>
+              <p data-claim={claims.audit.id} data-verdict={claims.audit.verdict}>{claims.audit.text}</p>
+              <p>{artifact.enso.years.includes(audit.max_ratio_year) ? `${audit.max_ratio_year} began in El Niño, so that one year would have bent both the trend and the El Niño comparison.` : 'That one year would have bent the trend.'} We rebuilt everything on IMERG. MERRA-2 appears nowhere else on this page.</p>
+              <table class="audit-table">
+                <caption>Annual rain at {fmt.lon(audit.point[0])}, {fmt.lat(audit.point[1])}, from NASA POWER point requests</caption>
+                <thead><tr><th scope="col">Year</th><th scope="col">MERRA-2</th><th scope="col">IMERG</th><th scope="col">Ratio</th></tr></thead>
+                <tbody>
+                  {audit.years.map((year, index) => (
+                    <tr data-audit-year={year}><th scope="row">{year}</th><td>{fmt.mm(audit.merra2_mm[index] ?? 0)}</td><td>{fmt.mm(audit.imerg_mm[index] ?? 0)}</td><td>{(audit.ratio[index] ?? 0).toFixed(2)}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+          </div>
+        </section>
       </section>
 
       <section class="sources" aria-labelledby="sources-heading">
