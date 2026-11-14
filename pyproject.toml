@@ -1,7 +1,7 @@
 [project]
 name = "philippines-rainfall-map"
 version = "1.0.0"
-description = "Reproducible NASA IMERG rainfall story data for the Philippines"
+description = "Reproducible NASA IMERG rainfall story data for the Philippines. Code written with Claude Code (Claude Opus 5.5), an SI tool."
 requires-python = ">=3.14,<3.15"
 dependencies = ["numpy>=2.5,<3", "shapely>=2.2,<3"]
 

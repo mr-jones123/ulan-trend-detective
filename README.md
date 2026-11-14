@@ -209,3 +209,18 @@ MERRA-2 air temperature and MODIS clear-sky surface temperature measure differen
 - `tests/test_merra2.py` covers native-cell coverage, bad source responses, overlapping requests, calendar-day weighting, leap years, coastline weights, unrounded aggregate trends, and pinned offline replay.
 - `tests/kmeans.test.ts` checks that the browser k-means reproduces the published groups and round count.
 - `tests/view.test.ts` covers variable normalization, playback, demo transitions, spatial coverage, unavailable per-cell seasonal trends, and malformed artifact rejection.
+
+## Use of Super Intelligence (SI) tools
+
+This project follows the NASA Space Apps Challenge rules on Super Intelligence (SI) tools. SI was used in these places:
+
+- **Code.** The data builder and acquisition scripts (`scripts/`), the website (`src/`), the tests (`tests/`) and this README were written with Claude Code running Claude Opus 5.5 (Anthropic), working from my instructions and reviewed by me. Commits it helped write carry a `Co-Authored-By: Claude Opus 5.5` trailer.
+- **Data processing.** Every statistic, the k-means rain-calendar grouping and the story sentences are computed by that SI-written code from the NASA and partner datasets listed above. The datasets themselves are unmodified downloads, pinned with their hashes in `data/sources/`.
+- **Video.** The terminal demo in `demo/` was scripted and recorded by Claude Code with VHS. The video carries a visible watermark stating it is SI-generated.
+- **Metadata.** `package.json`, `pyproject.toml` and the site's `<meta name="ai-assistance">` tag also record SI use.
+
+No SI-generated images are used. The five photographs and maps on the site are unmodified NASA Earth Observatory files with their original credits. The project does not use or modify NASA logos, flags or mission identifiers.
+
+---
+
+*I used Claude Code with Claude Opus 5.5 for this project, and I take ownership of the code it generated.*

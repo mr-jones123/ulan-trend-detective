@@ -1,6 +1,13 @@
 {
   "name": "philippines-rainfall-map",
   "version": "1.0.0",
+  "description": "Ulan, measured: NASA rainfall, El Niño and crop trends for the Philippines. Code written with Claude Code (Claude Opus 5.5), an SI tool; the author takes ownership of it.",
+  "ai_assistance": {
+    "tool": "Claude Code",
+    "model": "Claude Opus 5.5",
+    "provider": "Anthropic",
+    "scope": "code, data processing, tests, documentation, demo video"
+  },
   "private": true,
   "type": "module",
   "engines": {
