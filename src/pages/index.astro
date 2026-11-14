@@ -134,7 +134,8 @@ const januarySquares = artifact.period.years.map((year, index) => {
         <ol class="staircase">
           <li data-reveal><p class="stair">First, satellites watch the rain.</p><p>IMERG Final Run merges microwave and infrared satellite estimates with monthly rain gauges on a 0.1° grid.</p></li>
           <li data-reveal><p class="stair">Then we add each square's days.</p><p data-claim={claims['method-totals'].id} data-verdict={claims['method-totals'].verdict}>{claims['method-totals'].text}</p></li>
-          <li data-reveal><p class="stair">We take the middle slope.</p><p>Sen's slope is the median of the 300 slopes between every pair of years, so one unusual year moves it less than it would move a straight-line fit.</p></li>
+          <li data-reveal><p class="stair">Then we find the farms.</p><p>MODIS land cover for {artifact.farm.mask_year} marks cropland on a 500 m grid. We keep the {artifact.farm.sites.length} densest cropland areas, at least 1° apart, and read MODIS surface temperature over their cropland, by day and by night, for every 8-day window from January to April. Each site gets one daytime and one night value per year.</p></li>
+          <li data-reveal><p class="stair">We take the middle slope.</p><p>Sen's slope is the median of the 300 slopes between every pair of years, for each square's rain and each farm's temperature, so one unusual year moves it less than it would move a straight-line fit.</p></li>
           <li data-reveal><p class="stair">Last, we ask if chance could do it.</p><p>The Mann-Kendall test gives p. Below 0.05, a change meets the test. The test assumes that years are independent.</p></li>
         </ol>
         <section class="method-notes" aria-labelledby="notes-heading">

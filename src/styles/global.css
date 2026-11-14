@@ -245,9 +245,10 @@ figcaption { font-size: var(--small); color: var(--muted); margin-top: 10px; lin
 .staircase li { position: relative; counter-increment: method-step; max-width: 58ch; padding-left: 80px; }
 .staircase li::before { content: counter(method-step); position: absolute; left: 0; top: 0; width: 56px; aspect-ratio: 1; display: grid; place-items: center; background: var(--ink); color: var(--bg); font-family: var(--display-face); font-size: 44px; line-height: 1; }
 .staircase li:last-child::before { background: var(--accent); color: var(--ink); }
-.staircase li:nth-child(2) { margin-left: calc(100% / 12 * 2); }
-.staircase li:nth-child(3) { margin-left: calc(100% / 12 * 4); }
-.staircase li:nth-child(4) { margin-left: calc(100% / 12 * 6); }
+.staircase li:nth-child(2) { margin-left: calc(100% / 12 * 1.5); }
+.staircase li:nth-child(3) { margin-left: calc(100% / 12 * 3); }
+.staircase li:nth-child(4) { margin-left: calc(100% / 12 * 4.5); }
+.staircase li:nth-child(5) { margin-left: calc(100% / 12 * 6); }
 .stair { font-family: var(--display-face); font-size: var(--head); line-height: 0.95; letter-spacing: -0.01em; margin-bottom: 12px; }
 .method-notes { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px; margin-top: clamp(80px, 8vw, 140px); font-size: var(--small); }
 .notes-heading { grid-column: 1 / span 3; align-self: start; position: sticky; top: 24px; }
@@ -315,9 +316,10 @@ figcaption { font-size: var(--small); color: var(--muted); margin-top: 10px; lin
   .stair { font-size: 8.4vw; }
   .staircase li { padding-left: 48px; }
   .staircase li::before { width: 36px; font-size: 30px; }
-  .staircase li:nth-child(2) { margin-left: 6vw; }
-  .staircase li:nth-child(3) { margin-left: 12vw; }
-  .staircase li:nth-child(4) { margin-left: 18vw; }
+  .staircase li:nth-child(2) { margin-left: 4.5vw; }
+  .staircase li:nth-child(3) { margin-left: 9vw; }
+  .staircase li:nth-child(4) { margin-left: 13.5vw; }
+  .staircase li:nth-child(5) { margin-left: 18vw; }
   .method-notes { display: block; }
   .notes-heading { position: static; margin-bottom: 32px; }
   .notes-columns { columns: 1; }
