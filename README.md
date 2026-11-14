@@ -216,7 +216,7 @@ This project follows the NASA Space Apps Challenge rules on Super Intelligence (
 
 - **Code.** The data builder and acquisition scripts (`scripts/`), the website (`src/`), the tests (`tests/`) and this README were written with Claude Code running Claude Opus 5.5 (Anthropic), working from my instructions and reviewed by me. Commits it helped write carry a `Co-Authored-By: Claude Opus 5.5` trailer.
 - **Data processing.** Every statistic, the k-means rain-calendar grouping and the story sentences are computed by that SI-written code from the NASA and partner datasets listed above. The datasets themselves are unmodified downloads, pinned with their hashes in `data/sources/`.
-- **Video.** The terminal demo in `demo/` was scripted and recorded by Claude Code with VHS. The video carries a visible watermark stating it is SI-generated.
+- **Video.** Both demo videos were scripted, operated and recorded by Claude Code, and each carries a visible SI-GENERATED watermark in every frame. `demo/ulan-demo.mp4` is a 30-second tour of the website, driven by `demo/record-site.cjs` (Playwright in Chrome). `demo/ulan-terminal.mp4` shows the headline numbers and tests in a terminal, recorded with VHS from `demo/demo.tape`. `demo/watermark.sh` burns the watermark into both.
 - **Metadata.** `package.json`, `pyproject.toml` and the site's `<meta name="ai-assistance">` tag also record SI use.
 
 No SI-generated images are used. The five photographs and maps on the site are unmodified NASA Earth Observatory files with their original credits. The project does not use or modify NASA logos, flags or mission identifiers.

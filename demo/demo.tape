@@ -1,5 +1,5 @@
 # 30-second terminal demo, recorded with VHS by Claude Code (Claude Opus 5.5).
-# Run from the repo root: vhs demo/demo.tape && demo/watermark.sh
+# Run from the repo root: vhs demo/demo.tape && demo/watermark.sh demo/raw.mp4 demo/ulan-terminal.mp4 && rm demo/raw.mp4
 Output demo/raw.mp4
 
 Set Shell bash
