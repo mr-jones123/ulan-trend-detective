@@ -203,7 +203,8 @@ figcaption { font-size: var(--small); color: var(--muted); margin-top: 10px; lin
 .chart-summary { margin: 8px 0 0; }
 
 .year-control {
-  display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: 'label range play' 'output marks play' 'note note note';
+  /* The year text changes width while dragging; keep it off the slider's row so the slider never moves under the pointer. */
+  display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: 'label output output' 'range range play' 'marks marks .' 'note note note';
   align-items: center; gap: 4px 12px; margin: 16px 0;
 }
 .year-control label { grid-area: label; font-weight: 600; }
