@@ -1,0 +1,11 @@
+// Cloudflare Worker that serves the static Astro build. No server code: every request is a file from dist/.
+// Deploy: npm run build && npx wrangler deploy
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ulan-measured",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  }
+}

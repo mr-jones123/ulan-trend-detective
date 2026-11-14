@@ -2,6 +2,8 @@
 
 A static NASA data story and trend explorer for the Philippines, 2001 to 2025. It maps 3,735 native IMERG rainfall squares and compares January to April rainfall in years that began in El Niño with the other years. MERRA-2 adds modelled air temperature at two metres on its native 0.5° latitude by 0.625° longitude grid. A 2020 MODIS cropland mask adds farmland-weighted rain and clear-sky day and night surface temperatures at 12 sampled cropland sites. Variable selection keeps those different spatial footprints explicit. Two guided investigations demonstrate the comparisons, and a glossary explains the measurements and statistics.
 
+**Live site:** https://ulan-measured.xy-800.workers.dev · **Demo video:** `demo/ulan-demo.mp4`
+
 The site is one Astro page and one Python data builder. It has no backend and makes no NASA request from the browser. Every number in the prose is rendered into static HTML at build time from the same JSON file the map loads.
 
 ## Commands
@@ -41,6 +43,13 @@ To refetch the raw IMERG tiles on their own, run `uv run --frozen scripts/imerg.
 MODIS acquisition uses three concurrent requests with up to five attempts and exponential backoff. `uv run --frozen scripts/modis.py --offline` rebuilds the farm snapshot from the raw cache without the network. Each raw response is stored in `data/cache/modis/` with its URL, retrieval time, byte length and SHA-256 in a sidecar. The cache is ignored by git. The compact committed snapshot contains the per-square shares, site windows, cropland pixel counts and all retained or rejected day and night composite means. A rejected composite is `null`, not zero.
 
 The builder validates inputs before replacing the artifact. Each file write is atomic. A failed acquisition can retain verified cache entries and completed source snapshots, but it does not publish a new artifact. Output JSON has sorted keys and fixed rounding, and the provenance records keep their original retrieval times, so an offline replay reproduces `public/data/philippines-rainfall.json` byte for byte.
+
+Deploy to Cloudflare Workers (static assets only, configured in `wrangler.jsonc`):
+
+```sh
+npm run build
+npx wrangler deploy
+```
 
 ## Dependencies
 
