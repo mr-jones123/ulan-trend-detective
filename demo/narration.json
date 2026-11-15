@@ -1,0 +1,39 @@
+{
+  "voice": {
+    "provider": "ElevenLabs",
+    "model": "eleven_v4",
+    "voice": "George (JBFqnCBsd6RMkjVDRZzb)"
+  },
+  "ambience": {
+    "provider": "ElevenLabs",
+    "api": "sound-generation",
+    "prompt": "Gentle steady tropical rain falling on leaves and a tin roof, calm and even, distant soft ambience, no thunder, no voices"
+  },
+  "lines": [
+    {
+      "file": "audio/line1.mp3",
+      "start": 0.1,
+      "text": "NASA rain over the Philippines, put to the test."
+    },
+    {
+      "file": "audio/line2.mp3",
+      "start": 3.95,
+      "text": "In El Niño years, January-to-April rain drops sixty percent, in every region. By chance? About four in a million."
+    },
+    {
+      "file": "audio/line3.mp3",
+      "start": 13.15,
+      "text": "From rainfall alone, machine learning finds the four official climate types."
+    },
+    {
+      "file": "audio/line4.mp3",
+      "start": 18.2,
+      "text": "Farms dry out, and crops lose green at all twelve sites, in line with damage reports."
+    },
+    {
+      "file": "audio/line5.mp3",
+      "start": 24.3,
+      "text": "But the slow rise in rain could still be chance. Telling them apart is trend detection."
+    }
+  ]
+}

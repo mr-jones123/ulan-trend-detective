@@ -1,5 +1,7 @@
-// Record a ~30-second tour of the built site for the NASA Space Apps demo.
-// Scripted and run by Claude Code (Claude Opus 5.5), an SI tool; demo/watermark-site.sh burns in the SI watermark.
+// Record a 30-second narrated tour of the built site for the NASA Space Apps demo.
+// Scripted and run by Claude Code (Claude Opus 5.5), an SI tool. demo/compose.sh adds the SI-generated
+// ElevenLabs narration and rain ambience and burns in the SI watermark.
+// Scene timing follows demo/narration.json: title, El Niño, k-means, farms and damage reports, why it matters.
 // Usage: npm run build && npm run preview, then
 //   NODE_PATH=<dir containing playwright> node demo/record-site.cjs [http://127.0.0.1:4399/]
 const { chromium } = require('playwright');
@@ -22,10 +24,9 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.goto(URL, { waitUntil: 'networkidle' });
   await page.waitForSelector('[data-rainfall-app][data-state="ready"]', { timeout: 30000 });
   mark('ready');
-  await wait(2200); // title and photo mosaic
 
-  // Glide down to an element so the story's scroll-driven map and reveals react as they would for a reader.
-  const glide = async (selector, ms, offset = 80) => {
+  // Glide to an element so the story's scroll-driven map and reveals react as they would for a reader.
+  const glide = async (selector, ms, offset = 40) => {
     await page.evaluate(async ({ selector, ms, offset }) => {
       const target = document.querySelector(selector).getBoundingClientRect().top + scrollY - offset;
       const start = scrollY;
@@ -42,20 +43,22 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     }, { selector, ms, offset });
   };
 
-  await glide('#ch-rain', 1500);
-  await wait(2000); // rain squares
-  await glide('#ch-enso', 1500);
-  await wait(2600); // El Niño chapter, yellow field
-  await glide('#ch-climate', 1500);
-  await wait(1000);
-  await glide('[data-kmeans]', 900, 16);
+  await wait(3300);                                   // 1. title: "NASA rain over the Philippines, put to the test."
+  await glide('#h-enso', 600);
+  mark('enso');
+  await wait(8500);                                   // 2. El Niño and its permutation test
+  await glide('[data-kmeans]', 600, 16);
   await page.click('[data-kmeans] [data-run]');
-  await wait(7500); // k-means running, map repainting
-  await glide('#ch-farm-green', 1500);
-  await wait(2600); // crops less green
-  await glide('#explore', 1500, 0);
-  await page.selectOption('[data-region-select]', { index: 4 }).catch(() => {});
-  await wait(3000); // explorer, a region selected
+  mark('kmeans');
+  await wait(4400);                                   // 3. k-means repainting the map
+  await glide('.news-check', 600, 10);
+  mark('farms');
+  await wait(2600);                                   // 4a. damage reports beside regional rain
+  await glide('[data-claim="farm-green-chart"]', 500, 160);
+  await wait(2300);                                   // 4b. crops less green at all 12 sites
+  await glide('#why', 600, -60);
+  mark('why');
+  await wait(6300);                                   // 5. why it matters
   mark('end');
 
   await context.close();
